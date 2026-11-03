@@ -16,7 +16,7 @@ using HarmonyLib;
 
 namespace Oxide.Plugins
 {
-    [Info("Wallpaper Studio", "Marleybop", "1.12.0")]
+    [Info("Wallpaper Studio", "Marleybop", "1.12.1")]
     [Description("Fast wallpaper picker: search, collections, favourites, themes, list/grid views, eyedropper, bulk paint/strip with undo, and player-submitted Workshop wallpapers.")]
     public class WallpaperStudio : RustPlugin
     {
@@ -1087,14 +1087,15 @@ namespace Oxide.Plugins
             if (w == null) return;
             var info = Info(p.userID);
             bool fav = info.Favourites.Contains(w.Id);
-            var star = Button(c, parent, $"{Cmd} fav {w.Id}", "0 0 0 0", favAnchor, favAnchor, "", 0, C.Text, favOff0, favOff1);
-            Sprite(c, star, fav ? "assets/icons/favourite_active.png" : "assets/icons/favourite_inactive.png", fav ? C.Gold : "1 1 1 0.5", "0 0", "1 1");
+            var star = Button(c, parent, $"{Cmd} fav {w.Id}", "0 0 0 0.65", favAnchor, favAnchor, "", 0, C.Text, favOff0, favOff1);
+            Sprite(c, star, fav ? "assets/icons/favourite_active.png" : "assets/icons/favourite_inactive.png", fav ? C.Gold : "1 1 1 0.9", "0.14 0.14", "0.86 0.86");
             if (s.Tab == "mine" && w.Collection == "Mine")
             {
                 var sub = info.Mine.FirstOrDefault(m => m.Id == w.Id);
                 if (sub != null && (sub.Status == "denied" || sub.Status == "mature"))
                     Label(c, parent, Msg(sub.Status == "mature" ? "MatureBadge" : "NotRustBadge", p), 11, C.Danger, TextAnchor.MiddleCenter, "0 0.5", "1 0.62", bold: true);
-                Button(c, parent, $"{Cmd} unsubmit {w.Id}", "0 0 0 0.5", gearAnchor, gearAnchor, "✕", 11, C.Danger, gearOff0, gearOff1);
+                bool listRow = favAnchor == "1 0.5";
+                Button(c, parent, $"{Cmd} unsubmit {w.Id}", "0.62 0.18 0.15 0.95", listRow ? "1 0.5" : "0 1", listRow ? "1 0.5" : "0 1", Msg("RemoveShort", p), 10, C.Text, listRow ? "-122 -11" : "4 -24", listRow ? "-44 11" : "76 -4");
             }
         }
 
@@ -1116,7 +1117,7 @@ namespace Oxide.Plugins
             int font = cols >= 8 ? 10 : 12;
             Label(c, inner, Trim(w == null ? Msg("Plain", p) : w.Name, cols >= 8 ? 18 : 26), font, C.Text, TextAnchor.MiddleCenter, "0 0", "1 0.2", "3 0", "-3 0");
             Button(c, inner, $"{Cmd} apply {id}", "0 0 0 0", "0 0", "1 1");
-            int ic = cols >= 8 ? 18 : 24;
+            int ic = cols >= 8 ? 22 : 30;
             TileExtras(c, p, s, w, inner, "1 1", $"{-ic - 3} {-ic - 3}", "-3 -3", "0 1", $"3 {-ic - 3}", $"{ic + 3} -3");
         }
 
@@ -1133,7 +1134,7 @@ namespace Oxide.Plugins
             string meta = w == null ? Msg("PlainHelp", p) : (w.Collection + (w.Tags.Count > 0 ? "  ·  " + string.Join(", ", w.Tags) : ""));
             Label(c, row, meta, 12, C.TextDim, TextAnchor.MiddleLeft, "0.6 0", "1 1", "0 0", "-80 0");
             Button(c, row, $"{Cmd} apply {id}", "0 0 0 0", "0 0", "1 1");
-            TileExtras(c, p, s, w, row, "1 0.5", "-34 -12", "-10 12", "1 0.5", "-66 -12", "-42 12");
+            TileExtras(c, p, s, w, row, "1 0.5", "-38 -14", "-10 14", "1 0.5", "-66 -12", "-42 12");
         }
 
         // Everything a player needs to know, filled in from this server's config and their permissions.
@@ -1252,7 +1253,7 @@ namespace Oxide.Plugins
                 if (config.Bulk.Enabled && permission.UserHasPermission(p.UserIDString, PermBulk))
                     Button(c, tile, $"{Cmd} setpaint {key}", C.AccentDim, "0.5 0", "1 0.22", Msg("SetPaint", p), 10, C.Text, "2 4", "-4 0");
                 if (t.Owner == p.userID || (t.Owner == 0 && admin))
-                    Button(c, tile, $"{Cmd} deltheme {key}", "0 0 0 0.5", "1 1", "1 1", "✕", 11, C.Danger, "-22 -22", "-2 -2");
+                    Button(c, tile, $"{Cmd} deltheme {key}", "0.62 0.18 0.15 0.95", "1 1", "1 1", Msg("DeleteShort", p), 10, C.Text, "-62 -22", "-2 -2");
             }
             if (pages > 1)
             {
@@ -2051,8 +2052,8 @@ namespace Oxide.Plugins
                 Panel(c, inner, CuiHelper.GetGuid(), "0 0 0 0.65", "0 0", "1 0.22");
                 Label(c, inner, Trim(r.Title, 26), 11, C.Text, TextAnchor.MiddleCenter, "0 0.08", "1 0.22", "3 0", "-3 0", bold: true);
                 Label(c, inner, Msg("Subs", p, r.Subs.ToString("N0")), 9, C.TextDim, TextAnchor.MiddleCenter, "0 0", "1 0.09");
-                if (listed) Label(c, inner, Msg("Listed", p), 10, C.Gold, TextAnchor.UpperRight, "0 0.8", "1 0.97", "0 0", "-5 0", bold: true);
-                if (r.Mature) Label(c, inner, Msg("MatureTag", p), 10, C.Danger, TextAnchor.UpperLeft, "0 0.8", "1 0.97", "5 0", "0 0", bold: true);
+                if (listed) { var tag = CuiHelper.GetGuid(); Panel(c, inner, tag, "0.86 0.66 0.12 0.95", "1 1", "1 1", "-62 -22", "-4 -4"); Label(c, tag, Msg("Listed", p), 10, "0.08 0.06 0 1", TextAnchor.MiddleCenter, "0 0", "1 1", bold: true); }
+                if (r.Mature) { var tag = CuiHelper.GetGuid(); Panel(c, inner, tag, "0.62 0.18 0.15 0.95", "0 1", "0 1", "4 -22", "66 -4"); Label(c, tag, Msg("MatureTag", p), 10, C.Text, TextAnchor.MiddleCenter, "0 0", "1 1", bold: true); }
                 Button(c, inner, $"{Cmd} bsel {r.Id}", "0 0 0 0", "0 0", "1 1");
             }
             int pages = Math.Max(1, (page.Total + config.Browser.PerPage - 1) / Math.Max(1, config.Browser.PerPage));
@@ -2639,6 +2640,7 @@ namespace Oxide.Plugins
                 ["MatureWarn"] = "Steam flags that wallpaper as mature content, so most players' games won't show it",
                 ["MatureBlocked"] = "That wallpaper is flagged as mature content, which this server doesn't allow",
                 ["MatureTag"] = "MATURE",
+                ["RemoveShort"] = "REMOVE", ["DeleteShort"] = "DELETE",
                 ["SrvTitle"] = "SERVER SETTINGS (apply to everyone, saved straight away)",
                 ["SrvMature"] = "Allow mature (adult) wallpapers",
                 ["SrvFree"] = "Free for everyone (no cloth cost)",

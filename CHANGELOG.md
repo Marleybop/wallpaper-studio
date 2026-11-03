@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.12.1
+- Clearer tile controls: a bigger star on a dark backing, red REMOVE / DELETE buttons instead of a small ✕,
+  and solid ADDED / MATURE badges in the Workshop browser.
+
 ## 1.12.0
 - Outside faces (when allowed): click them with the tool to place, like inside faces; it costs cloth
   and goes into undo history as normal.
