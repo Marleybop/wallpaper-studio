@@ -65,6 +65,11 @@ The menu has a **Help** tab that explains everything using the server's actual s
     stutter. Outside faces are skipped.
 - **Undo:** covers every placement, strip and bulk job (last 30 actions, 15 minutes, both configurable).
   Use UNDO 1 / 5 / ALL or `/wp undo [n|all]`. Cloth is settled both ways.
+- **Browse Workshop:** search the Steam Workshop from inside the menu, with preview images and sorting
+  (trending, top rated, most used, newest). Click a result to preview it, then add it to My Wallpapers or,
+  for admins, to the server. This needs a free Steam Web API key in the config
+  (`"Workshop browser"` → `"Steam Web API key"`, from https://steamcommunity.com/dev/apikey). Only items
+  Steam lists publicly appear; any link can still be pasted directly.
 - **My Wallpapers:** paste a Steam Workshop link or ID into the box in the My Wallpapers tab and press
   Enter, or use chat: `/wp add <link> [wall|floor|ceiling]`.
 - **Cost:** every placement costs the game's single wallpaper price. To make it free:

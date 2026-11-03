@@ -16,7 +16,7 @@ using HarmonyLib;
 
 namespace Oxide.Plugins
 {
-    [Info("Wallpaper Studio", "Marleybop", "1.5.1")]
+    [Info("Wallpaper Studio", "Marleybop", "1.6.0")]
     [Description("Fast wallpaper picker: search, collections, favourites, themes, list/grid views, eyedropper, bulk paint/strip with undo, and player-submitted Workshop wallpapers.")]
     public class WallpaperStudio : RustPlugin
     {
@@ -88,6 +88,9 @@ namespace Oxide.Plugins
             [JsonProperty("Player submissions")]
             public SubmissionSettings Submissions = new SubmissionSettings();
 
+            [JsonProperty("Workshop browser (in-menu Steam Workshop search)")]
+            public BrowserSettings Browser = new BrowserSettings();
+
             [JsonProperty("Max personal themes per player")]
             public int MaxThemes = 20;
 
@@ -106,6 +109,20 @@ namespace Oxide.Plugins
             [JsonProperty("Button")] public string Button = "";
             [JsonProperty("Hold modifier")] public string Modifier = "";
             [JsonIgnore] public BUTTON B; [JsonIgnore] public BUTTON M; [JsonIgnore] public bool Valid, HasMod;
+        }
+
+        private class BrowserSettings
+        {
+            [JsonProperty("Enabled")] public bool Enabled = true;
+            [JsonProperty("Steam Web API key (https://steamcommunity.com/dev/apikey)")] public string ApiKey = "";
+            [JsonProperty("Workshop tags per surface (all must match; empty = search text only)")]
+            public Dictionary<string, List<string>> Tags = new Dictionary<string, List<string>>
+            {
+                { "Wall", new List<string>() }, { "Floor", new List<string>() }, { "Ceiling", new List<string>() }
+            };
+            [JsonProperty("Words added to every search when no tags are set")] public string DefaultSearch = "wallpaper";
+            [JsonProperty("Results per page")] public int PerPage = 12;
+            [JsonProperty("Cache results for (minutes)")] public int CacheMinutes = 10;
         }
 
         private class HotkeySettings
@@ -593,6 +610,10 @@ namespace Oxide.Plugins
             public ulong EditId;
             public bool EditMode;            // admins: show edit gears on tiles
             public bool ThemeToServer;       // admins: "save theme" goes to server themes
+            public string BrowseSort = "trend";   // trend | top | new | subs
+            public int BrowsePage = 1;
+            public ulong BrowseSel;
+            public string BrowseCollection = "";
         }
 
         private class AdminDraft
@@ -902,6 +923,7 @@ namespace Oxide.Plugins
                 new KeyValuePair<string, string>("recent", Msg("TabRecent", p)),
                 new KeyValuePair<string, string>("collections", Msg("TabCollections", p)),
                 new KeyValuePair<string, string>("themes", Msg("TabThemes", p)),
+                new KeyValuePair<string, string>("browse", Msg("TabBrowse", p)),
                 new KeyValuePair<string, string>("help", Msg("TabHelp", p)),
             };
             if (config.Submissions.Enabled && permission.UserHasPermission(p.UserIDString, PermSubmit))
@@ -944,6 +966,7 @@ namespace Oxide.Plugins
             if (s.Tab == "themes") { BuildThemes(c, p, s, tool); return; }
             if (s.Tab == "admin") { BuildAdmin(c, p, s); return; }
             if (s.Tab == "help") { BuildHelp(c, p); return; }
+            if (s.Tab == "browse") { BuildBrowse(c, p, s); return; }
 
             var items = Query(p, s);
             // "Plain" first on the All tab so players can go back to the game's standard wallpaper
@@ -1076,6 +1099,7 @@ namespace Oxide.Plugins
             };
             if (bulk) right.Add(Msg("HelpBulk", p, config.Bulk.MaxSurfaces));
             right.Add(Msg("HelpThemes", p, config.MaxThemes, ChatCmd));
+            if (BrowserReady) right.Add(Msg("HelpBrowse", p));
             if (submit) right.Add(Msg(config.Submissions.RequireApproval && !permission.UserHasPermission(p.UserIDString, PermTrusted) && !IsAdmin(p) ? "HelpSubmitApproval" : "HelpSubmit", p, ChatCmd, config.Submissions.MaxPerPlayer) + (config.Submissions.ShareWithTeam ? " " + Msg("HelpTeam", p) : ""));
             right.Add(Msg("HelpBinds", p));
 
@@ -1160,6 +1184,7 @@ namespace Oxide.Plugins
         private void BuildSide(CuiElementContainer c, BasePlayer p, UiState s, global::WallpaperPlanner tool)
         {
             Panel(c, UiFrame, UiSide, C.Panel, "1 0", "1 1", "-322 0", "0 -68");
+            if (s.Tab == "browse" && s.BrowseSel != 0) { BuildBrowseSide(c, p, s); return; }
             ulong current = tool != null ? ToolSkin(tool, s.Kind) : 0;
             Label(c, UiSide, Msg("Selected", p, Msg(s.Kind.ToString(), p)).ToUpper(), 12, C.TextDim, TextAnchor.MiddleLeft, "0 1", "1 1", "16 -32", "-16 -8", bold: true);
             string box = CuiHelper.GetGuid();
@@ -1322,8 +1347,9 @@ namespace Oxide.Plugins
                     }
 
                 case "search":
-                    s.Search = rest.Trim(); s.Page = 0;
+                    s.Search = rest.Trim(); s.Page = 0; s.BrowsePage = 1; s.BrowseSel = 0;
                     if (s.Tab == "admin") s.Tab = "all";
+                    if (s.Tab == "browse") { Redraw(p, header: true, grid: true, side: true); return; }
                     Redraw(p, header: true, rail: true, grid: true); return;
 
                 case "collection":
@@ -1391,6 +1417,27 @@ namespace Oxide.Plugins
                         Redraw(p, grid: true); return;
                     }
 
+                case "bsort": s.BrowseSort = arg.GetString(1, "trend"); s.BrowsePage = 1; s.BrowseSel = 0; Redraw(p, grid: true, side: true); return;
+                case "bpage": s.BrowsePage = Math.Max(1, arg.GetInt(1, 1)); s.BrowseSel = 0; Redraw(p, grid: true, side: true); return;
+                case "bsel": s.BrowseSel = arg.GetULong(1); Redraw(p, grid: true, side: true); return;
+                case "bcoll": s.BrowseCollection = rest.Trim(); return;
+                case "badd":
+                    {
+                        ulong id = arg.GetULong(1);
+                        var r = BrowseItem(id);
+                        if (arg.GetString(2) == "server" && admin)
+                        {
+                            if (byId.ContainsKey(id)) { Toast(p, Msg("AlreadyListed", p)); return; }
+                            var w = new Wallpaper { Id = id, Name = r != null ? r.Title : id.ToString(), Kind = s.Kind, Collection = s.BrowseCollection, AddedBy = p.userID };
+                            catalogue.Items.Add(w); catalogueDirty = true; RebuildIndex();
+                            Toast(p, Msg("AddedServer", p, w.Name, Msg(s.Kind.ToString(), p)));
+                        }
+                        else
+                        {
+                            Submit(p, id.ToString(), s.Kind, r != null ? r.Title : null, stayOnTab: true);
+                        }
+                        Redraw(p, rail: true, side: true); return;
+                    }
                 case "themeto":
                     s.ThemeToServer = admin && arg.GetString(1) == "server";
                     Redraw(p, grid: true); return;
@@ -1648,6 +1695,175 @@ namespace Oxide.Plugins
 
         #region Steam lookup & submissions
 
+        #region Workshop browser
+
+        private class BrowseResult { public ulong Id; public string Title = "", Preview = "", Author = ""; public int Subs; public List<string> Tags = new List<string>(); }
+        private class WorkshopPage { public float At; public int Total; public List<BrowseResult> Items = new List<BrowseResult>(); public bool Loading; public string Error; }
+
+        private readonly Dictionary<string, WorkshopPage> browseCache = new Dictionary<string, WorkshopPage>();
+        private readonly Dictionary<ulong, BrowseResult> browseItems = new Dictionary<ulong, BrowseResult>();
+
+        private BrowseResult BrowseItem(ulong id) { BrowseResult r; return browseItems.TryGetValue(id, out r) ? r : null; }
+
+        private bool BrowserReady => config.Browser.Enabled && !string.IsNullOrEmpty(config.Browser.ApiKey);
+
+        private static int QueryType(string sort)
+        {
+            switch (sort)
+            {
+                case "top": return 0;    // RankedByVote
+                case "new": return 1;    // RankedByPublicationDate
+                case "subs": return 9;   // RankedByTotalUniqueSubscriptions
+                default: return 3;       // RankedByTrend
+            }
+        }
+
+        // Fetch (or reuse) one page of Workshop results for a surface/search/sort; redraws waiting players when it lands.
+        private WorkshopPage GetBrowsePage(Kind kind, string search, string sort, int page)
+        {
+            string key = $"{kind}|{search.ToLower()}|{sort}|{page}";
+            WorkshopPage cached;
+            if (browseCache.TryGetValue(key, out cached) && (cached.Loading || UnityEngine.Time.realtimeSinceStartup - cached.At < config.Browser.CacheMinutes * 60f)) return cached;
+            var bp = new WorkshopPage { Loading = true, At = UnityEngine.Time.realtimeSinceStartup };
+            browseCache[key] = bp;
+            var args = new List<string>
+            {
+                "key=" + Uri.EscapeDataString(config.Browser.ApiKey), "appid=252490", "creator_appid=252490",
+                "numperpage=" + Mathf.Clamp(config.Browser.PerPage, 4, 50), "page=" + page, "return_tags=true", "return_previews=false"
+            };
+            List<string> tags;
+            if (!config.Browser.Tags.TryGetValue(kind.ToString(), out tags)) tags = new List<string>();
+            for (int i = 0; i < tags.Count; i++) args.Add($"requiredtags[{i}]=" + Uri.EscapeDataString(tags[i]));
+            string text = (search ?? "").Trim();
+            if (tags.Count == 0 && !string.IsNullOrEmpty(config.Browser.DefaultSearch)) text = (config.Browser.DefaultSearch + " " + text).Trim();
+            if (text.Length > 0) { args.Add("search_text=" + Uri.EscapeDataString(text)); args.Add("query_type=" + (sort == "trend" ? 12 : QueryType(sort))); }
+            else args.Add("query_type=" + QueryType(sort));
+            string url = "https://api.steampowered.com/IPublishedFileService/QueryFiles/v1/?" + string.Join("&", args);
+            webrequest.Enqueue(url, null, (code, body) =>
+            {
+                bp.Loading = false; bp.At = UnityEngine.Time.realtimeSinceStartup;
+                try
+                {
+                    if (code != 200) { bp.Error = code == 403 ? "Steam rejected the API key" : $"Steam returned {code}"; }
+                    else
+                    {
+                        var r = JObject.Parse(body)["response"];
+                        bp.Total = r?.Value<int?>("total") ?? 0;
+                        var files = r?["publishedfiledetails"] as JArray;
+                        if (files != null)
+                            foreach (var f in files)
+                            {
+                                ulong id;
+                                if (!ulong.TryParse(f.Value<string>("publishedfileid"), out id)) continue;
+                                var item = new BrowseResult
+                                {
+                                    Id = id, Title = f.Value<string>("title") ?? id.ToString(), Preview = f.Value<string>("preview_url") ?? "",
+                                    Subs = f.Value<int?>("subscriptions") ?? 0,
+                                    Tags = (f["tags"] as JArray)?.Select(t => t.Value<string>("tag")).Where(t => t != null).ToList() ?? new List<string>()
+                                };
+                                bp.Items.Add(item); browseItems[id] = item;
+                            }
+                    }
+                }
+                catch { bp.Error = "Couldn't read Steam's reply"; }
+                // never log the URL: it contains the API key
+                foreach (var pl in BasePlayer.activePlayerList)
+                {
+                    UiState st;
+                    if (openUi.Contains(pl.userID) && ui.TryGetValue(pl.userID, out st) && st.Tab == "browse") Redraw(pl, grid: true);
+                }
+            }, this, RequestMethod.GET, null, 15f);
+            return bp;
+        }
+
+        private static void UrlImage(CuiElementContainer c, string parent, string url, string min, string max, string offMin = "0 0", string offMax = "0 0")
+        {
+            c.Add(new CuiElement
+            {
+                Parent = parent,
+                Components =
+                {
+                    new CuiRawImageComponent { Url = url, Color = "1 1 1 1" },
+                    new CuiRectTransformComponent { AnchorMin = min, AnchorMax = max, OffsetMin = offMin, OffsetMax = offMax }
+                }
+            });
+        }
+
+        private void BuildBrowse(CuiElementContainer c, BasePlayer p, UiState s)
+        {
+            if (!BrowserReady)
+            {
+                Label(c, UiGrid, IsAdmin(p) ? Msg("BrowseNoKeyAdmin", p) : Msg("BrowseNoKey", p), 14, C.TextDim, TextAnchor.MiddleCenter, "0.1 0.2", "0.9 0.8");
+                return;
+            }
+            Chips(c, UiGrid, "0 1", 0, -28, 0, 110, new[] { "trend", "top", "subs", "new" }.Select(k => new KeyValuePair<string, string>(k, Msg("Sort_" + k, p))), s.BrowseSort, $"{Cmd} bsort", 11);
+            Label(c, UiGrid, Msg("BrowseFor", p, Msg(s.Kind.ToString(), p), string.IsNullOrEmpty(s.Search) ? "" : $" · \"{s.Search}\""), 11, C.TextDim, TextAnchor.MiddleRight, "0.5 1", "1 1", "0 -28", "0 0");
+            var page = GetBrowsePage(s.Kind, s.Search, s.BrowseSort, s.BrowsePage);
+            if (page.Loading) { Label(c, UiGrid, Msg("BrowseLoading", p), 15, C.TextDim, TextAnchor.MiddleCenter, "0 0", "1 1"); return; }
+            if (!string.IsNullOrEmpty(page.Error)) { Label(c, UiGrid, page.Error, 14, C.Danger, TextAnchor.MiddleCenter, "0 0", "1 1"); return; }
+            if (page.Items.Count == 0) { Label(c, UiGrid, Msg("BrowseNone", p), 15, C.TextDim, TextAnchor.MiddleCenter, "0 0", "1 1"); return; }
+
+            int cols = 4, rows = (Mathf.Clamp(config.Browser.PerPage, 4, 50) + 3) / 4;
+            float gap = 0.012f, top = 0.94f, bottom = 0.06f;
+            float cw = (1f - gap * (cols - 1)) / cols, ch = (top - bottom - gap * (rows - 1)) / rows;
+            for (int i = 0; i < page.Items.Count && i < cols * rows; i++)
+            {
+                var r = page.Items[i];
+                int col = i % cols, row = i / cols;
+                float x0 = col * (cw + gap), y1 = top - row * (ch + gap);
+                bool sel = r.Id == s.BrowseSel;
+                bool listed = byId.ContainsKey(r.Id) || Info(p.userID).Mine.Any(m => m.Id == r.Id);
+                string tile = CuiHelper.GetGuid();
+                Panel(c, UiGrid, tile, sel ? C.Accent : C.Tile, $"{x0} {y1 - ch}", $"{x0 + cw} {y1}");
+                string inner = CuiHelper.GetGuid();
+                Panel(c, tile, inner, C.Tile, "0 0", "1 1", sel ? "3 3" : "0 0", sel ? "-3 -3" : "0 0");
+                if (!string.IsNullOrEmpty(r.Preview)) UrlImage(c, inner, r.Preview, "0.04 0.24", "0.96 0.97");
+                Panel(c, inner, CuiHelper.GetGuid(), "0 0 0 0.65", "0 0", "1 0.22");
+                Label(c, inner, Trim(r.Title, 26), 11, C.Text, TextAnchor.MiddleCenter, "0 0.08", "1 0.22", "3 0", "-3 0", bold: true);
+                Label(c, inner, Msg("Subs", p, r.Subs.ToString("N0")), 9, C.TextDim, TextAnchor.MiddleCenter, "0 0", "1 0.09");
+                if (listed) Label(c, inner, Msg("Listed", p), 10, C.Gold, TextAnchor.UpperRight, "0 0.8", "1 0.97", "0 0", "-5 0", bold: true);
+                Button(c, inner, $"{Cmd} bsel {r.Id}", "0 0 0 0", "0 0", "1 1");
+            }
+            int pages = Math.Max(1, (page.Total + config.Browser.PerPage - 1) / Math.Max(1, config.Browser.PerPage));
+            if (s.BrowsePage > 1) Button(c, UiGrid, $"{Cmd} bpage {s.BrowsePage - 1}", C.PanelHi, "0.5 0", "0.5 0", "‹", 16, C.Text, "-106 0", "-68 26");
+            Label(c, UiGrid, Msg("PageOf", p, s.BrowsePage, pages), 13, C.Text, TextAnchor.MiddleCenter, "0.5 0", "0.5 0", "-62 0", "62 26");
+            if (s.BrowsePage < pages) Button(c, UiGrid, $"{Cmd} bpage {s.BrowsePage + 1}", C.PanelHi, "0.5 0", "0.5 0", "›", 16, C.Text, "68 0", "106 26");
+            Label(c, UiGrid, Msg("BrowseTotal", p, page.Total.ToString("N0")), 11, C.TextDim, TextAnchor.MiddleLeft, "0 0", "0.3 0", "2 0", "0 26");
+        }
+
+        private void BuildBrowseSide(CuiElementContainer c, BasePlayer p, UiState s)
+        {
+            var r = BrowseItem(s.BrowseSel);
+            if (r == null) return;
+            Label(c, UiSide, Msg("BrowseSelected", p).ToUpper(), 12, C.TextDim, TextAnchor.MiddleLeft, "0 1", "1 1", "16 -32", "-16 -8", bold: true);
+            string box = CuiHelper.GetGuid();
+            Panel(c, UiSide, box, C.Tile, "0 1", "1 1", "16 -300", "-16 -38");
+            if (!string.IsNullOrEmpty(r.Preview)) UrlImage(c, box, r.Preview, "0 0", "1 1", "4 4", "-4 -4");
+            Label(c, UiSide, Trim(r.Title, 34), 15, C.Text, TextAnchor.MiddleLeft, "0 1", "1 1", "16 -328", "-16 -304", bold: true);
+            Label(c, UiSide, Msg("Subs", p, r.Subs.ToString("N0")) + (r.Tags.Count > 0 ? "  ·  " + Trim(string.Join(", ", r.Tags), 40) : ""), 11, C.TextDim, TextAnchor.MiddleLeft, "0 1", "1 1", "16 -348", "-16 -330");
+            Label(c, UiSide, Msg("BrowseWorkshopId", p, r.Id), 11, C.TextFaint, TextAnchor.MiddleLeft, "0 1", "1 1", "16 -366", "-16 -350");
+
+            int y = 14;
+            bool admin = IsAdmin(p);
+            bool onServer = byId.ContainsKey(r.Id);
+            bool mine = Info(p.userID).Mine.Any(m => m.Id == r.Id);
+            if (admin)
+            {
+                Button(c, UiSide, onServer ? $"{Cmd} noop" : $"{Cmd} badd {r.Id} server", onServer ? C.PanelHi : C.Accent, "0 0", "1 0", onServer ? Msg("AlreadyListed", p) : Msg("BrowseAddServer", p, Msg(s.Kind.ToString(), p)), 13, onServer ? C.TextFaint : C.OnAccent, $"16 {y}", $"-16 {y + 36}");
+                y += 42;
+                Input(c, UiSide, $"{Cmd} bcoll", s.BrowseCollection, Msg("BrowseCollectionHint", p), "0 0", "1 0", $"16 {y}", $"-16 {y + 30}", 12);
+                y += 40;
+            }
+            if (config.Submissions.Enabled && permission.UserHasPermission(p.UserIDString, PermSubmit))
+            {
+                Button(c, UiSide, mine ? $"{Cmd} noop" : $"{Cmd} badd {r.Id} mine", mine ? C.PanelHi : C.AccentDim, "0 0", "1 0", mine ? Msg("AlreadyMine", p) : Msg("BrowseAddMine", p, Msg(s.Kind.ToString(), p)), 13, mine ? C.TextFaint : C.Text, $"16 {y}", $"-16 {y + 36}");
+                y += 44;
+            }
+            Label(c, UiSide, Msg("BrowseNote", p), 11, C.TextDim, TextAnchor.LowerLeft, "0 0", "1 0", $"16 {y}", $"-16 {y + 48}");
+        }
+
+        #endregion
+
         private void LookupSteam(ulong id, Action<string, string> done)
         {
             if (!config.Submissions.SteamLookup) { done(null, ""); return; }
@@ -1674,7 +1890,7 @@ namespace Oxide.Plugins
                 }, this, RequestMethod.POST);
         }
 
-        private void Submit(BasePlayer p, string text, Kind kind)
+        private void Submit(BasePlayer p, string text, Kind kind, string knownTitle = null, bool stayOnTab = false)
         {
             if (!config.Submissions.Enabled || !permission.UserHasPermission(p.UserIDString, PermSubmit)) { Toast(p, Msg("NoPerm", p)); return; }
             ulong id;
@@ -1683,7 +1899,7 @@ namespace Oxide.Plugins
             if (info.Mine.Any(m => m.Id == id)) { Toast(p, Msg("AlreadyMine", p)); return; }
             if (info.Mine.Count >= config.Submissions.MaxPerPlayer) { Toast(p, Msg("TooMany", p, config.Submissions.MaxPerPlayer)); return; }
             bool trusted = !config.Submissions.RequireApproval || permission.UserHasPermission(p.UserIDString, PermTrusted) || IsAdmin(p);
-            var sub = new Submission { Id = id, Name = id.ToString(), Kind = kind, Status = trusted ? "approved" : "pending" };
+            var sub = new Submission { Id = id, Name = string.IsNullOrEmpty(knownTitle) ? id.ToString() : knownTitle, Kind = kind, Status = trusted ? "approved" : "pending" };
             info.Mine.Add(sub); playersDirty = true;
             Toast(p, Msg(trusted ? "SubmittedOk" : "SubmittedPending", p, Msg(kind.ToString(), p)));
             LookupSteam(id, (title, check) =>
@@ -1697,7 +1913,7 @@ namespace Oxide.Plugins
                     foreach (var a in BasePlayer.activePlayerList.Where(IsAdmin))
                         Toast(a, Msg("NewSubmission", a, p.displayName));
             });
-            if (openUi.Contains(p.userID))
+            if (openUi.Contains(p.userID) && !stayOnTab)
             {
                 var s = State(p); s.Tab = "mine"; s.Kind = kind;
                 Redraw(p, header: true, rail: true, grid: true, side: true);
@@ -2115,6 +2331,24 @@ namespace Oxide.Plugins
                 ["Selected"] = "In your tool: {0}", ["Selected1"] = "Selected: {0}",
                 ["Tips"] = "Holding the tool:  {0} next  ·  {1} copy  ·  {2} strip\nOwn keys: F1 → <color=#c8e6a0>bind q wpstudio.ui toggle</color>\nEverything else: the <b>Help</b> tab or /{3} help",
                 ["TabHelp"] = "Help",
+                ["TabBrowse"] = "Browse Workshop",
+                ["HelpBrowse"] = "<color=#8cc63f><b>BROWSE WORKSHOP</b></color>
+Search the Steam Workshop without leaving the game: pick a surface, type in the search box, sort by trending, top rated, most used or newest, then click a result to preview it and add it.",
+                ["BrowseNoKey"] = "The Workshop browser isn't set up on this server yet.",
+                ["BrowseNoKeyAdmin"] = "To turn on the Workshop browser, add a Steam Web API key to the config\n(\"Workshop browser\" → \"Steam Web API key\"), then reload the plugin.\nGet one free at steamcommunity.com/dev/apikey.",
+                ["Sort_trend"] = "TRENDING", ["Sort_top"] = "TOP RATED", ["Sort_subs"] = "MOST USED", ["Sort_new"] = "NEWEST",
+                ["BrowseFor"] = "Searching the Steam Workshop for {0} wallpapers{1}",
+                ["BrowseLoading"] = "Searching the Steam Workshop…",
+                ["BrowseNone"] = "Nothing found. Try other words in the search box.",
+                ["BrowseTotal"] = "{0} results",
+                ["Subs"] = "{0} subscribers", ["Listed"] = "ADDED",
+                ["BrowseSelected"] = "From the Workshop",
+                ["BrowseWorkshopId"] = "Workshop ID {0}",
+                ["BrowseAddServer"] = "ADD TO SERVER ({0})", ["BrowseAddMine"] = "ADD TO MY WALLPAPERS ({0})",
+                ["BrowseCollectionHint"] = "Collection for server adds (optional), Enter",
+                ["BrowseNote"] = "Adds it for the surface selected at the top. Only items Steam lists publicly show up here; you can still paste any link in My Wallpapers.",
+                ["AlreadyListed"] = "ALREADY ON THE SERVER",
+                ["AddedServer"] = "Added \"{0}\" to the server ({1})",
                 ["HelpNoKey"] = "(no key on this server)",
                 ["HelpOpen"] = "<color=#8cc63f><b>OPENING AND CLOSING</b></color>\nHold the Wallpaper Tool and press <b>{0}</b>, or type <b>/{1}</b>. Close it with ✕ or by clicking outside it. Rust doesn't send keys to the server while a menu is open, so to close it with a key, bind one yourself (see Key binds).",
                 ["HelpPick"] = "<color=#8cc63f><b>PICKING</b></color>\nClick a wallpaper to load it into your tool, then place it as normal. WALL / FLOOR / CEILING switches the surface. ★ adds a favourite. <b>Plain</b> sets the tool back to Rust's standard wallpaper. Search covers names, tags and collections (press Enter). VIEW and ICON SIZE are saved for you.",
