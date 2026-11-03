@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.10.0
+- Text boxes use a real placeholder that disappears as you type.
+- Mature content: "Allow mature (adult) wallpapers" (off by default). When it's off, mature-flagged Workshop
+  items are hidden in the browser and refused when pasted; when it's on, they're marked MATURE.
+  Pasted links are checked with the Steam key when one is set.
+- Self-updating: checks the latest GitHub release tag every 6 hours and installs it (verified, with a
+  backup). Both are on by default and can be switched off. New `wpstudio.update [install]` command.
+
 ## 1.9.1
 - Fix: 1.9.0 did not compile (a line break inside the Room Sets help text). Use 1.9.1.
 

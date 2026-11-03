@@ -99,10 +99,26 @@ client bind in the F1 console:
 | `bind v wpstudio.ui next` / `bind b wpstudio.ui prev` | next / previous favourite |
 | `bind n wpstudio.ui bulk` | open the bulk window |
 
+## Mature content
+Steam flags some Workshop items as mature (sexual or nudity content), and most players' games won't
+display those. "Allow mature (adult) wallpapers" in the config is **off** by default. Then the browser
+hides them, and pasted links for them are refused. Turn it on to allow them; they're then marked MATURE.
+
+## Updates
+The plugin checks the latest `vX.Y.Z` release tag on GitHub every 6 hours and, by default, installs it:
+- It downloads that release's plugin file and checks it really is Wallpaper Studio at that version.
+- It backs up the current file to `oxide/data/WallpaperStudio/backups/`, then replaces it, and Oxide
+  reloads it.
+- Turn off "Check for updates" or "Install updates automatically" in the config ("Plugin updates") to
+  stop this.
+- `wpstudio.update` checks now; `wpstudio.update install` installs a newer release now.
+- To roll back, copy the backup over `oxide/plugins/WallpaperStudio.cs`.
+
 ## Console commands (admin)
 - `wpstudio.add <id or link> [wall|floor|ceiling] [collection...]`: add one wallpaper.
 - `wpstudio.importlist [file]`: import `oxide/data/WallpaperStudio/<file>.json` (default `import`). It's a
   JSON list of `{ "Id": 123, "Name": "Brick", "Kind": "Wall", "Collection": "Starter", "Tags": [] }`.
+- `wpstudio.update [install]`: check GitHub for a newer release (and install it).
 - `wpstudio.export`: write the catalogue and server room sets to `oxide/data/WallpaperStudio/export.json`.
 
 ## Data

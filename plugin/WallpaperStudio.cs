@@ -16,7 +16,7 @@ using HarmonyLib;
 
 namespace Oxide.Plugins
 {
-    [Info("Wallpaper Studio", "Marleybop", "1.9.1")]
+    [Info("Wallpaper Studio", "Marleybop", "1.10.0")]
     [Description("Fast wallpaper picker: search, collections, favourites, themes, list/grid views, eyedropper, bulk paint/strip with undo, and player-submitted Workshop wallpapers.")]
     public class WallpaperStudio : RustPlugin
     {
@@ -87,6 +87,12 @@ namespace Oxide.Plugins
             [JsonProperty("Player submissions")]
             public SubmissionSettings Submissions = new SubmissionSettings();
 
+            [JsonProperty("Allow mature (adult) wallpapers - ones Steam flags as sexual/nudity content (most players' games won't show them anyway)")]
+            public bool AllowMature = false;
+
+            [JsonProperty("Plugin updates (from the GitHub releases)")]
+            public UpdateSettings Updates = new UpdateSettings();
+
             [JsonProperty("Workshop browser (in-menu Steam Workshop search)")]
             public BrowserSettings Browser = new BrowserSettings();
 
@@ -108,6 +114,14 @@ namespace Oxide.Plugins
             [JsonProperty("Button")] public string Button = "";
             [JsonProperty("Hold modifier")] public string Modifier = "";
             [JsonIgnore] public BUTTON B; [JsonIgnore] public BUTTON M; [JsonIgnore] public bool Valid, HasMod;
+        }
+
+        private class UpdateSettings
+        {
+            [JsonProperty("Check for updates")] public bool Check = true;
+            [JsonProperty("Install updates automatically")] public bool AutoInstall = true;
+            [JsonProperty("Check every (hours)")] public float Hours = 6f;
+            [JsonProperty("GitHub repository (owner/name)")] public string Repo = "Marleybop/wallpaper-studio";
         }
 
         private class BrowserSettings
@@ -244,7 +258,7 @@ namespace Oxide.Plugins
             foreach (var p in players.Values)
             {
                 if (p.Themes == null) p.Themes = new List<Theme>();
-                foreach (var m in p.Mine) if (m.Status != "denied") m.Status = "ok";
+                foreach (var m in p.Mine) if (m.Status != "denied" && m.Status != "mature") m.Status = "ok";
                 if (!string.IsNullOrEmpty(p.LegacyGrid) && string.IsNullOrEmpty(p.Size))
                     p.Size = p.LegacyGrid == "small" ? "L" : p.LegacyGrid == "large" ? "S" : "M";
                 p.LegacyGrid = null;
@@ -318,6 +332,11 @@ namespace Oxide.Plugins
             foreach (var player in BasePlayer.activePlayerList)
                 if (HoldingTool(player)) ToolWatcher.Attach(player);
             timer.Every(30f, () => SaveData());
+            if (config.Updates.Check)
+            {
+                timer.Once(20f, () => CheckForUpdate(config.Updates.AutoInstall, null));
+                timer.Every(Mathf.Max(1f, config.Updates.Hours) * 3600f, () => CheckForUpdate(config.Updates.AutoInstall, null));
+            }
             if (catalogue.Items.Count == 0)
                 Puts("Catalogue is empty. Admins: open the menu and use Admin > Add, or 'wpstudio.importlist' to import a list of IDs.");
         }
@@ -821,17 +840,26 @@ namespace Oxide.Plugins
         {
             var bg = CuiHelper.GetGuid();
             Panel(c, parent, bg, "0.07 0.07 0.08 1", min, max, offMin, offMax);
-            if (string.IsNullOrEmpty(text) && !string.IsNullOrEmpty(hint))
-                Label(c, bg, hint, size, C.TextFaint, TextAnchor.MiddleLeft, "0 0", "1 1", "10 0", "-8 0");
+            string field = CuiHelper.GetGuid(), ph = string.IsNullOrEmpty(hint) ? null : CuiHelper.GetGuid();
             c.Add(new CuiElement
             {
-                Parent = bg,
+                Name = field, Parent = bg,
                 Components =
                 {
-                    new CuiInputFieldComponent { Command = command, Text = text, FontSize = size, Color = C.Text, Align = TextAnchor.MiddleLeft, CharsLimit = 300, NeedsKeyboard = true },
+                    new CuiInputFieldComponent { Command = command, Text = text, FontSize = size, Color = C.Text, Align = TextAnchor.MiddleLeft, CharsLimit = 300, NeedsKeyboard = true, PlaceholderId = ph },
                     new CuiRectTransformComponent { AnchorMin = "0 0", AnchorMax = "1 1", OffsetMin = "10 0", OffsetMax = "-8 0" }
                 }
             });
+            if (ph != null)
+                c.Add(new CuiElement
+                {
+                    Name = ph, Parent = field,
+                    Components =
+                    {
+                        new CuiTextComponent { Text = hint, FontSize = size, Color = C.TextFaint, Align = TextAnchor.MiddleLeft, Font = "robotocondensed-regular.ttf", PlaceholderParentId = field },
+                        new CuiRectTransformComponent { AnchorMin = "0 0", AnchorMax = "1 1" }
+                    }
+                });
         }
 
         private static string Trim(string s, int max) => s.Length > max ? s.Substring(0, max - 1) + "…" : s;
@@ -875,6 +903,7 @@ namespace Oxide.Plugins
             Button(c, UiFrame, $"{Cmd} noop", "0 0 0 0", "0 0", "1 1");                         // swallow clicks inside
             CuiHelper.AddUi(player, c);
             openUi.Add(player.userID);
+            if (updateNotice != null && IsAdmin(player)) Toast(player, updateNotice);
             Redraw(player, header: true, rail: true, grid: true, side: true);
         }
 
@@ -1061,8 +1090,8 @@ namespace Oxide.Plugins
             if (s.Tab == "mine" && w.Collection == "Mine")
             {
                 var sub = info.Mine.FirstOrDefault(m => m.Id == w.Id);
-                if (sub != null && sub.Status == "denied")
-                    Label(c, parent, Msg("NotRustBadge", p), 11, C.Danger, TextAnchor.MiddleCenter, "0 0.5", "1 0.62", bold: true);
+                if (sub != null && (sub.Status == "denied" || sub.Status == "mature"))
+                    Label(c, parent, Msg(sub.Status == "mature" ? "MatureBadge" : "NotRustBadge", p), 11, C.Danger, TextAnchor.MiddleCenter, "0 0.5", "1 0.62", bold: true);
                 Button(c, parent, $"{Cmd} unsubmit {w.Id}", "0 0 0 0.5", gearAnchor, gearAnchor, "✕", 11, C.Danger, gearOff0, gearOff1);
             }
         }
@@ -1696,7 +1725,12 @@ namespace Oxide.Plugins
                 var w = new Wallpaper { Id = id, Name = ids.Count == 1 && !string.IsNullOrEmpty(d.Name) ? d.Name : id.ToString(), Kind = d.Kind, Collection = d.Collection, Tags = tags, AddedBy = p.userID };
                 catalogue.Items.Add(w);
                 added++;
-                if (string.IsNullOrEmpty(d.Name) || ids.Count > 1) LookupSteam(id, (title, check) => { if (!string.IsNullOrEmpty(title)) { w.Name = title; catalogueDirty = true; RebuildIndex(); } });
+                LookupSteam(id, (title, check) =>
+                {
+                    if (!string.IsNullOrEmpty(title) && (string.IsNullOrEmpty(d.Name) || ids.Count > 1)) { w.Name = title; catalogueDirty = true; RebuildIndex(); }
+                    if (check == "mature" && !config.AllowMature) { catalogue.Items.Remove(w); catalogueDirty = true; RebuildIndex(); Toast(p, Msg("MatureBlocked", p)); }
+                    else if (check == "mature") Toast(p, Msg("MatureWarnAdmin", p, w.Name));
+                });
             }
             catalogueDirty = true; RebuildIndex();
             Toast(p, Msg("AddedN", p, added, ids.Count - added));
@@ -1749,6 +1783,71 @@ namespace Oxide.Plugins
             arg.ReplyWith($"Imported {added} wallpapers ({skipped} skipped: duplicates or invalid).");
         }
 
+        // ---- updates: latest vX.Y.Z tag on GitHub -> download that tag's plugin file -> verify -> back up -> replace (Oxide reloads it)
+        private string updateNotice;
+
+        private static System.Version ParseVersion(string tag)
+        {
+            System.Version v;
+            return System.Version.TryParse((tag ?? "").TrimStart('v', 'V'), out v) ? v : null;
+        }
+
+        private void CheckForUpdate(bool install, Action<string> reply)
+        {
+            Action<string> say = msg => { Puts(msg); if (reply != null) reply(msg); };
+            var current = new System.Version(Version.Major, Version.Minor, Version.Patch);
+            webrequest.Enqueue($"https://api.github.com/repos/{config.Updates.Repo}/tags?per_page=100", null, (code, body) =>
+            {
+                if (code != 200) { say($"Update check failed (GitHub returned {code})."); return; }
+                System.Version latest = null; string tag = null;
+                try
+                {
+                    foreach (var t in JArray.Parse(body))
+                    {
+                        var name = t.Value<string>("name"); var v = ParseVersion(name);
+                        if (v != null && (latest == null || v > latest)) { latest = v; tag = name; }
+                    }
+                }
+                catch { say("Update check failed (couldn't read GitHub's reply)."); return; }
+                if (latest == null || latest <= current) { say($"Wallpaper Studio is up to date (v{current})."); updateNotice = null; return; }
+                updateNotice = $"Wallpaper Studio v{latest} is available (running v{current}).";
+                if (!install) { say(updateNotice + " Run 'wpstudio.update install' to install it."); NotifyAdmins(updateNotice); return; }
+                webrequest.Enqueue($"https://raw.githubusercontent.com/{config.Updates.Repo}/{tag}/plugin/WallpaperStudio.cs", null, (code2, file) =>
+                {
+                    // only accept the real plugin file at the expected version
+                    if (code2 != 200 || string.IsNullOrEmpty(file) || !file.Contains("class WallpaperStudio : RustPlugin")
+                        || !file.Contains($"[Info(\"Wallpaper Studio\", ") || !file.Contains($"\"{latest.Major}.{latest.Minor}.{latest.Build}\")]"))
+                    { say($"Update to v{latest} skipped: the download didn't look like Wallpaper Studio v{latest}."); return; }
+                    try
+                    {
+                        string dir = System.IO.Path.Combine(Interface.Oxide.DataDirectory, Name, "backups");
+                        System.IO.Directory.CreateDirectory(dir);
+                        string live = System.IO.Path.Combine(Interface.Oxide.PluginDirectory, "WallpaperStudio.cs");
+                        string backup = System.IO.Path.Combine(dir, $"WallpaperStudio-v{current}.cs");
+                        if (System.IO.File.Exists(live)) System.IO.File.Copy(live, backup, true);
+                        say($"Installing Wallpaper Studio v{latest} (backup of v{current}: {backup}). To roll back, copy that file over oxide/plugins/WallpaperStudio.cs.");
+                        NotifyAdmins(Msg("UpdateInstalling", null, latest));
+                        System.IO.File.WriteAllText(live, file);   // Oxide notices the change and reloads the plugin
+                    }
+                    catch (Exception e) { say($"Update to v{latest} failed: {e.Message}"); }
+                }, this, RequestMethod.GET, new Dictionary<string, string> { { "User-Agent", "WallpaperStudio" } }, 30f);
+            }, this, RequestMethod.GET, new Dictionary<string, string> { { "User-Agent", "WallpaperStudio" }, { "Accept", "application/vnd.github+json" } }, 20f);
+        }
+
+        private void NotifyAdmins(string text)
+        {
+            foreach (var a in BasePlayer.activePlayerList.Where(IsAdmin)) Toast(a, text);
+        }
+
+        [ConsoleCommand("wpstudio.update")]
+        private void UpdateCommand(ConsoleSystem.Arg arg)
+        {
+            if (arg.Connection != null && !permission.UserHasPermission(arg.Player()?.UserIDString ?? "", PermAdmin)) return;
+            bool install = arg.GetString(0) == "install";
+            arg.ReplyWith(install ? "Checking GitHub and installing if newer..." : "Checking GitHub for a newer version...");
+            CheckForUpdate(install, null);
+        }
+
         [ConsoleCommand("wpstudio.export")]
         private void ExportCommand(ConsoleSystem.Arg arg)
         {
@@ -1763,13 +1862,22 @@ namespace Oxide.Plugins
 
         #region Workshop browser
 
-        private class BrowseResult { public ulong Id; public string Title = "", Preview = "", Author = ""; public int Subs; public List<string> Tags = new List<string>(); }
+        private class BrowseResult { public ulong Id; public string Title = "", Preview = "", Author = ""; public int Subs; public bool Mature; public List<string> Tags = new List<string>(); }
         private class WorkshopPage { public float At; public int Total; public List<BrowseResult> Items = new List<BrowseResult>(); public bool Loading; public string Error; }
 
         private readonly Dictionary<string, WorkshopPage> browseCache = new Dictionary<string, WorkshopPage>();
         private readonly Dictionary<ulong, BrowseResult> browseItems = new Dictionary<ulong, BrowseResult>();
 
         private BrowseResult BrowseItem(ulong id) { BrowseResult r; return browseItems.TryGetValue(id, out r) ? r : null; }
+
+        // Steam's mature flags: maybe_inappropriate_sex, or content descriptors 1 (some nudity/sexual), 3 (adult only sexual), 4 (frequent nudity/sexual)
+        private static bool IsMature(JToken f)
+        {
+            if (f == null) return false;
+            if (f.Value<bool?>("maybe_inappropriate_sex") == true) return true;
+            var ids = f["content_descriptorids"] as JArray;
+            return ids != null && ids.Any(x => { int v = x.Value<int>(); return v == 1 || v == 3 || v == 4; });
+        }
 
         private Kind KindFromTags(BrowseResult r, Kind fallback)
         {
@@ -1833,10 +1941,12 @@ namespace Oxide.Plugins
                             {
                                 ulong id;
                                 if (!ulong.TryParse(f.Value<string>("publishedfileid"), out id)) continue;
+                                bool mature = IsMature(f);
+                                if (mature && !config.AllowMature) continue;
                                 var item = new BrowseResult
                                 {
                                     Id = id, Title = f.Value<string>("title") ?? id.ToString(), Preview = f.Value<string>("preview_url") ?? "",
-                                    Subs = f.Value<int?>("subscriptions") ?? 0,
+                                    Subs = f.Value<int?>("subscriptions") ?? 0, Mature = mature,
                                     Tags = (f["tags"] as JArray)?.Select(t => t.Value<string>("tag")).Where(t => t != null).ToList() ?? new List<string>()
                                 };
                                 bp.Items.Add(item); browseItems[id] = item;
@@ -1900,6 +2010,7 @@ namespace Oxide.Plugins
                 Label(c, inner, Trim(r.Title, 26), 11, C.Text, TextAnchor.MiddleCenter, "0 0.08", "1 0.22", "3 0", "-3 0", bold: true);
                 Label(c, inner, Msg("Subs", p, r.Subs.ToString("N0")), 9, C.TextDim, TextAnchor.MiddleCenter, "0 0", "1 0.09");
                 if (listed) Label(c, inner, Msg("Listed", p), 10, C.Gold, TextAnchor.UpperRight, "0 0.8", "1 0.97", "0 0", "-5 0", bold: true);
+                if (r.Mature) Label(c, inner, Msg("MatureTag", p), 10, C.Danger, TextAnchor.UpperLeft, "0 0.8", "1 0.97", "5 0", "0 0", bold: true);
                 Button(c, inner, $"{Cmd} bsel {r.Id}", "0 0 0 0", "0 0", "1 1");
             }
             int pages = Math.Max(1, (page.Total + config.Browser.PerPage - 1) / Math.Max(1, config.Browser.PerPage));
@@ -1947,6 +2058,27 @@ namespace Oxide.Plugins
         private void LookupSteam(ulong id, Action<string, string> done)
         {
             if (!config.Submissions.SteamLookup) { done(null, ""); return; }
+            if (BrowserReady)
+            {
+                string url = "https://api.steampowered.com/IPublishedFileService/GetDetails/v1/?key=" + Uri.EscapeDataString(config.Browser.ApiKey) + "&publishedfileids[0]=" + id + "&includetags=true";
+                webrequest.Enqueue(url, null, (code, body) =>
+                {
+                    string title = null, check = "unknown";
+                    try
+                    {
+                        var d = code == 200 ? JObject.Parse(body)["response"]?["publishedfiledetails"]?[0] : null;
+                        if (d != null && (d.Value<int?>("result") ?? 0) == 1)
+                        {
+                            title = d.Value<string>("title");
+                            check = d.Value<uint?>("consumer_appid") != 252490 && d.Value<uint?>("consumer_app_id") != 252490 ? "not a Rust item" : IsMature(d) ? "mature" : "ok";
+                        }
+                        else if (d != null) check = "hidden or removed";
+                    }
+                    catch { check = "lookup failed"; }   // never log the URL: it contains the API key
+                    done(title, check);
+                }, this, RequestMethod.GET, null, 15f);
+                return;
+            }
             webrequest.Enqueue("https://api.steampowered.com/ISteamRemoteStorage/GetPublishedFileDetails/v1/",
                 $"itemcount=1&publishedfileids[0]={id}", (code, body) =>
                 {
@@ -1986,6 +2118,8 @@ namespace Oxide.Plugins
                 sub.SteamCheck = check;
                 if (!string.IsNullOrEmpty(title)) sub.Name = title;
                 if (check == "not a Rust item") { sub.Status = "denied"; Toast(p, Msg("NotRust", p)); }
+                else if (check == "mature" && !config.AllowMature) { info.Mine.Remove(sub); Toast(p, Msg("MatureBlocked", p)); }
+                else if (check == "mature") { sub.Status = "mature"; Toast(p, Msg("MatureWarn", p)); }
                 playersDirty = true;
                 if (p != null && p.IsConnected) Redraw(p, grid: true);
             });
@@ -2416,7 +2550,12 @@ namespace Oxide.Plugins
                 ["ThemeLoadedToast"] = "Loaded room set \"{0}\" into your tool",
                 ["ThemeLoaded"] = "the wall, floor and ceiling in your tool",
                 ["PageOf"] = "Page {0} / {1}", ["Count"] = "{0} wallpapers",
-                ["NotRustBadge"] = "NOT A RUST ITEM",
+                ["NotRustBadge"] = "NOT A RUST ITEM", ["MatureBadge"] = "MATURE (FILTERED)",
+                ["MatureWarn"] = "Steam flags that wallpaper as mature content, so most players' games won't show it",
+                ["MatureBlocked"] = "That wallpaper is flagged as mature content, which this server doesn't allow",
+                ["MatureTag"] = "MATURE",
+                ["UpdateInstalling"] = "Installing Wallpaper Studio v{0}; it reloads in a moment",
+                ["MatureWarnAdmin"] = "Heads up: Steam flags \"{0}\" as mature, so most players won't see it",
                 ["Selected"] = "In your tool: {0}", ["Selected1"] = "Selected: {0}",
                 ["Tips"] = "Holding the tool:  {0} next  ·  {1} copy  ·  {2} strip\nOwn keys: F1 → <color=#c8e6a0>bind q wpstudio.ui toggle</color>\nEverything else: the <b>Help</b> tab or /{3} help",
                 ["TabHelp"] = "Help",
