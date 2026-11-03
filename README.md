@@ -136,3 +136,6 @@ shows next to the title in the menu.
 See [docs/DESIGN.md](docs/DESIGN.md) for how it works.
 [`tools/deploy-test.sh`](tools/deploy-test.sh) copies the plugin to a local test server and prints the
 compile result. Set `RUST_TEST_SERVER` to your server folder.
+
+## Licence
+MIT. See [LICENSE](LICENSE). © Marleybop.
