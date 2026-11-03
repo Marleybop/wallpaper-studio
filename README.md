@@ -128,6 +128,9 @@ The plugin checks the latest `vX.Y.Z` release tag on GitHub every 6 hours and, b
 - Data is saved every 30 s, on server save and on unload. A broken config file is never overwritten;
   the plugin uses defaults in memory and logs a warning.
 
+## Making your own wallpapers
+Sizes, tips and upload steps: [docs/MAKING-WALLPAPERS.md](docs/MAKING-WALLPAPERS.md).
+
 ## Versions
 See [CHANGELOG.md](CHANGELOG.md). Releases are tagged `vX.Y.Z` in git, and the version number also
 shows next to the title in the menu.
