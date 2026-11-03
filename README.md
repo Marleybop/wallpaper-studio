@@ -1,7 +1,7 @@
 # Wallpaper Studio
 
 An Oxide plugin for Rust that turns the Wallpaper Tool into a proper decorating tool:
-- a fast picker with search, collections, favourites, recents, themes, and grid or list views
+- a fast picker with search, collections, favourites, recents, room sets, and grid or list views
 - hotkeys, automatic wall/floor/ceiling switching, and copying from a wall
 - bulk paint or strip for a level or a whole building
 - full undo
@@ -32,7 +32,7 @@ each player's game downloads the textures from Steam.
 | `wallpaperstudio.bulk` | Bulk paint / strip a level or a building |
 | `wallpaperstudio.free` | No cloth cost: bulk jobs and, by default, single placements |
 | `wallpaperstudio.submit` | My Wallpapers: add your own Workshop wallpapers |
-| `wallpaperstudio.admin` | Admin tab and Browse → Add to server, remove server wallpapers, server themes, see every collection |
+| `wallpaperstudio.admin` | Admin tab and Browse → Add to server, remove server wallpapers, server room sets, see every collection |
 
 Optional: gate a collection behind a permission of your choosing in the config
 (`"Collection permissions": { "Collection name": "wallpaperstudio.something" }`). Leave it empty and every
@@ -98,12 +98,12 @@ client bind in the F1 console:
 - `wpstudio.add <id or link> [wall|floor|ceiling] [collection...]`: add one wallpaper.
 - `wpstudio.importlist [file]`: import `oxide/data/WallpaperStudio/<file>.json` (default `import`). It's a
   JSON list of `{ "Id": 123, "Name": "Brick", "Kind": "Wall", "Collection": "Starter", "Tags": [] }`.
-- `wpstudio.export`: write the catalogue and server themes to `oxide/data/WallpaperStudio/export.json`.
+- `wpstudio.export`: write the catalogue and server room sets to `oxide/data/WallpaperStudio/export.json`.
 
 ## Data
-- `oxide/data/WallpaperStudio/catalogue.json`: wallpapers and server themes. The previous version is
+- `oxide/data/WallpaperStudio/catalogue.json`: wallpapers and server room sets. The previous version is
   kept in `catalogue_backup.json`.
-- `oxide/data/WallpaperStudio/players.json`: favourites, recents, personal wallpapers, themes and view
+- `oxide/data/WallpaperStudio/players.json`: favourites, recents, personal wallpapers, room sets and view
   settings.
 - Data is saved every 30 s, on server save and on unload. A broken config file is never overwritten;
   the plugin uses defaults in memory and logs a warning.
