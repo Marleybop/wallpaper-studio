@@ -16,7 +16,7 @@ using HarmonyLib;
 
 namespace Oxide.Plugins
 {
-    [Info("Wallpaper Studio", "Marleybop", "1.6.0")]
+    [Info("Wallpaper Studio", "Marleybop", "1.7.0")]
     [Description("Fast wallpaper picker: search, collections, favourites, themes, list/grid views, eyedropper, bulk paint/strip with undo, and player-submitted Workshop wallpapers.")]
     public class WallpaperStudio : RustPlugin
     {
@@ -25,7 +25,6 @@ namespace Oxide.Plugins
         private const string PermUse = "wallpaperstudio.use";
         private const string PermBulk = "wallpaperstudio.bulk";
         private const string PermSubmit = "wallpaperstudio.submit";
-        private const string PermTrusted = "wallpaperstudio.trusted";   // submissions skip approval
         private const string PermFree = "wallpaperstudio.free";         // bulk painting costs nothing
         private const string PermAdmin = "wallpaperstudio.admin";
 
@@ -147,9 +146,8 @@ namespace Oxide.Plugins
         private class SubmissionSettings
         {
             [JsonProperty("Enabled")] public bool Enabled = true;
-            [JsonProperty("Require admin approval (players with wallpaperstudio.trusted skip it)")] public bool RequireApproval = true;
             [JsonProperty("Max personal wallpapers per player")] public int MaxPerPlayer = 30;
-            [JsonProperty("Team members can use each other's approved wallpapers")] public bool ShareWithTeam = true;
+            [JsonProperty("Team members can use each other's personal wallpapers")] public bool ShareWithTeam = true;
             [JsonProperty("Look up names on Steam")] public bool SteamLookup = true;
         }
 
@@ -212,7 +210,7 @@ namespace Oxide.Plugins
             public ulong Id;
             public string Name = "";
             public Kind Kind;
-            public string Status = "pending"; // pending | approved | denied
+            public string Status = "ok";      // ok | denied (not a Rust Workshop item)
             public DateTime At = DateTime.UtcNow;
             public string SteamCheck = "";
         }
@@ -246,6 +244,7 @@ namespace Oxide.Plugins
             foreach (var p in players.Values)
             {
                 if (p.Themes == null) p.Themes = new List<Theme>();
+                foreach (var m in p.Mine) if (m.Status != "denied") m.Status = "ok";
                 if (!string.IsNullOrEmpty(p.LegacyGrid) && string.IsNullOrEmpty(p.Size))
                     p.Size = p.LegacyGrid == "small" ? "L" : p.LegacyGrid == "large" ? "S" : "M";
                 p.LegacyGrid = null;
@@ -297,7 +296,7 @@ namespace Oxide.Plugins
         private void Init()
         {
             Instance = this;
-            foreach (var p in new[] { PermUse, PermBulk, PermSubmit, PermTrusted, PermFree, PermAdmin })
+            foreach (var p in new[] { PermUse, PermBulk, PermSubmit, PermFree, PermAdmin })
                 permission.RegisterPermission(p, this);
             foreach (var p in config.CollectionPermissions.Values.Distinct())
                 if (p.StartsWith("wallpaperstudio.") && !permission.PermissionExists(p, this)) permission.RegisterPermission(p, this);
@@ -609,8 +608,6 @@ namespace Oxide.Plugins
             public int Page;
             public Kind Kind = Kind.Wall;
             public AdminDraft Draft;
-            public ulong EditId;
-            public bool EditMode;            // admins: show edit gears on tiles
             public bool ThemeToServer;       // admins: "save theme" goes to server themes
             public string BrowseSort = "trend";   // trend | top | new | subs
             public int BrowsePage = 1;
@@ -655,7 +652,7 @@ namespace Oxide.Plugins
             return w.Id.ToString() == search;
         }
 
-        // Personal wallpapers a player may use: their own approved ones, plus their team's if sharing is on.
+        // Personal wallpapers a player may use: their own, plus their team's if sharing is on.
         private IEnumerable<Wallpaper> Personal(BasePlayer p, Kind kind, bool includePending)
         {
             var owners = new List<ulong> { p.userID };
@@ -668,8 +665,7 @@ namespace Oxide.Plugins
                 foreach (var s in info.Mine)
                 {
                     if (s.Kind != kind) continue;
-                    bool usable = s.Status == "approved";
-                    if (!usable && !(includePending && owner == p.userID)) continue;
+                    if (s.Status == "denied" && !(includePending && owner == p.userID)) continue;
                     yield return new Wallpaper { Id = s.Id, Name = s.Name, Kind = s.Kind, Collection = owner == p.userID ? "Mine" : "Team", AddedBy = owner };
                 }
             }
@@ -932,8 +928,7 @@ namespace Oxide.Plugins
                 tabs.Add(new KeyValuePair<string, string>("mine", Msg("TabMine", p)));
             if (IsAdmin(p))
             {
-                int pending = players.Values.Sum(i => i.Mine.Count(m => m.Status == "pending"));
-                tabs.Add(new KeyValuePair<string, string>("admin", Msg("TabAdmin", p) + (pending > 0 ? $"  <color=#f0c040>({pending})</color>" : "")));
+                tabs.Add(new KeyValuePair<string, string>("admin", Msg("TabAdmin", p)));
             }
             int y = -12;
             foreach (var t in tabs)
@@ -1024,16 +1019,11 @@ namespace Oxide.Plugins
             bool fav = info.Favourites.Contains(w.Id);
             var star = Button(c, parent, $"{Cmd} fav {w.Id}", "0 0 0 0", favAnchor, favAnchor, "", 0, C.Text, favOff0, favOff1);
             Sprite(c, star, fav ? "assets/icons/favourite_active.png" : "assets/icons/favourite_inactive.png", fav ? C.Gold : "1 1 1 0.5", "0 0", "1 1");
-            if (s.EditMode && IsAdmin(p) && byId.ContainsKey(w.Id))
-            {
-                var gear = Button(c, parent, $"{Cmd} edit {w.Id}", "0 0 0 0", gearAnchor, gearAnchor, "", 0, C.Text, gearOff0, gearOff1);
-                Sprite(c, gear, "assets/icons/gear.png", "1 1 1 0.8", "0 0", "1 1");
-            }
             if (s.Tab == "mine" && w.Collection == "Mine")
             {
                 var sub = info.Mine.FirstOrDefault(m => m.Id == w.Id);
-                if (sub != null && sub.Status != "approved")
-                    Label(c, parent, sub.Status == "pending" ? Msg("Pending", p) : Msg("Denied", p), 11, sub.Status == "pending" ? C.Gold : C.Danger, TextAnchor.MiddleCenter, "0 0.5", "1 0.62", bold: true);
+                if (sub != null && sub.Status == "denied")
+                    Label(c, parent, Msg("NotRustBadge", p), 11, C.Danger, TextAnchor.MiddleCenter, "0 0.5", "1 0.62", bold: true);
                 Button(c, parent, $"{Cmd} unsubmit {w.Id}", "0 0 0 0.5", gearAnchor, gearAnchor, "✕", 11, C.Danger, gearOff0, gearOff1);
             }
         }
@@ -1102,7 +1092,7 @@ namespace Oxide.Plugins
             if (bulk) right.Add(Msg("HelpBulk", p, config.Bulk.MaxSurfaces));
             right.Add(Msg("HelpThemes", p, config.MaxThemes, ChatCmd));
             if (BrowserReady) right.Add(Msg("HelpBrowse", p));
-            if (submit) right.Add(Msg(config.Submissions.RequireApproval && !permission.UserHasPermission(p.UserIDString, PermTrusted) && !IsAdmin(p) ? "HelpSubmitApproval" : "HelpSubmit", p, ChatCmd, config.Submissions.MaxPerPlayer) + (config.Submissions.ShareWithTeam ? " " + Msg("HelpTeam", p) : ""));
+            if (submit) right.Add(Msg("HelpSubmit", p, ChatCmd, config.Submissions.MaxPerPlayer) + (config.Submissions.ShareWithTeam ? " " + Msg("HelpTeam", p) : ""));
             right.Add(Msg("HelpBinds", p));
 
             Label(c, UiGrid, string.Join("\n\n", left), 12, C.Text, TextAnchor.UpperLeft, "0 0", "0.49 1", "4 0", "0 -4");
@@ -1201,6 +1191,8 @@ namespace Oxide.Plugins
             int price = Price(out priceItem, out priceName);
             bool free = IsFree(p);
             Label(c, UiSide, free ? Msg("CostFree", p) : Msg("Cost", p, price, priceName), 11, C.TextFaint, TextAnchor.MiddleLeft, "0 1", "1 1", "16 -322", "-16 -304");
+            if (IsAdmin(p) && current != 0 && byId.ContainsKey(current))
+                Button(c, UiSide, $"{Cmd} delete {current}", "0.45 0.16 0.13 1", "0 1", "1 1", Msg("RemoveServer", p), 11, C.Text, "16 -356", "-16 -328");
 
             // bottom-up action stack
             int y = 14;
@@ -1235,9 +1227,7 @@ namespace Oxide.Plugins
         private void BuildAdmin(CuiElementContainer c, BasePlayer p, UiState s)
         {
             var d = s.Draft ?? (s.Draft = new AdminDraft { Kind = s.Kind });
-            bool edit = s.EditId != 0;
-            Label(c, UiGrid, edit ? Msg("AdminEdit", p) : Msg("AdminAdd", p), 16, C.Accent, TextAnchor.MiddleLeft, "0 1", "0.5 1", "0 -30", "0 0", bold: true);
-            Button(c, UiGrid, $"{Cmd} editmode", s.EditMode ? C.Accent : C.PanelHi, "1 1", "1 1", s.EditMode ? Msg("EditOn", p) : Msg("EditOff", p), 11, s.EditMode ? C.OnAccent : C.Text, "-190 -30", "0 -2");
+            Label(c, UiGrid, Msg("AdminAdd", p), 16, C.Accent, TextAnchor.MiddleLeft, "0 1", "0.5 1", "0 -30", "0 0", bold: true);
             string[] labels = { Msg("FieldId", p), Msg("FieldName", p), Msg("FieldCollection", p), Msg("FieldTags", p) };
             string[] fields = { "id", "name", "collection", "tags" };
             string[] values = { d.Id, d.Name, d.Collection, d.Tags };
@@ -1245,33 +1235,11 @@ namespace Oxide.Plugins
             {
                 int top = -44 - i * 42;
                 Label(c, UiGrid, labels[i], 12, C.TextDim, TextAnchor.MiddleLeft, "0 1", "0.24 1", $"0 {top - 30}", $"0 {top}");
-                if (edit && i == 0) { Label(c, UiGrid, s.EditId.ToString(), 14, C.Text, TextAnchor.MiddleLeft, "0.24 1", "0.64 1", $"10 {top - 30}", $"0 {top}"); continue; }
                 Input(c, UiGrid, $"{Cmd} draft {fields[i]}", values[i], "", "0.24 1", "0.64 1", $"0 {top - 30}", $"0 {top}");
             }
             Chips(c, UiGrid, "0.24 1", 0, -240, -212, 92, Kinds.Select(k => new KeyValuePair<string, string>(((int)k).ToString(), Msg(k.ToString(), p).ToUpper())), ((int)d.Kind).ToString(), $"{Cmd} draft kind", 12);
-            Button(c, UiGrid, $"{Cmd} save", C.Accent, "0.24 1", "0.24 1", edit ? Msg("Save", p) : Msg("Add", p), 13, C.OnAccent, "0 -288", "140 -254");
-            if (edit)
-            {
-                Button(c, UiGrid, $"{Cmd} delete {s.EditId}", C.Danger, "0.24 1", "0.24 1", Msg("Delete", p), 13, C.Text, "150 -288", "260 -254");
-                Button(c, UiGrid, $"{Cmd} cancel", C.PanelHi, "0.24 1", "0.24 1", Msg("Cancel", p), 13, C.Text, "270 -288", "370 -254");
-            }
+            Button(c, UiGrid, $"{Cmd} save", C.Accent, "0.24 1", "0.24 1", Msg("Add", p), 13, C.OnAccent, "0 -288", "140 -254");
             Label(c, UiGrid, Msg("AdminTips", p), 11, C.TextDim, TextAnchor.UpperLeft, "0.66 1", "1 1", "0 -290", "0 -40");
-
-            var queue = players.SelectMany(kv => kv.Value.Mine.Where(m => m.Status == "pending").Select(m => new { Owner = kv.Key, Sub = m })).Take(5).ToList();
-            Label(c, UiGrid, Msg("Queue", p, queue.Count), 14, C.Accent, TextAnchor.MiddleLeft, "0 0", "1 0", "0 196", "0 222", bold: true);
-            for (int i = 0; i < queue.Count; i++)
-            {
-                var q = queue[i];
-                int y = 156 - i * 38;
-                string row = CuiHelper.GetGuid();
-                Panel(c, UiGrid, row, C.Tile, "0 0", "1 0", $"0 {y}", $"0 {y + 34}");
-                Icon(c, row, ItemIdFor(q.Sub.Kind), q.Sub.Id, "0 0", "0 1", "2 2", "34 -2");
-                var ownerName = covalence.Players.FindPlayerById(q.Owner.ToString())?.Name ?? q.Owner.ToString();
-                Label(c, row, $"{Trim(q.Sub.Name, 30)}  <color=#9aa0a0>{Msg(q.Sub.Kind.ToString(), p)} · {q.Sub.Id} · {ownerName} · Steam: {q.Sub.SteamCheck}</color>", 12, C.Text, TextAnchor.MiddleLeft, "0 0", "1 1", "42 0", "-330 0");
-                Button(c, row, $"{Cmd} approve {q.Owner} {q.Sub.Id} 0", C.AccentDim, "1 0", "1 1", Msg("Approve", p), 11, C.Text, "-324 4", "-224 -4");
-                Button(c, row, $"{Cmd} approve {q.Owner} {q.Sub.Id} 1", C.Accent, "1 0", "1 1", Msg("ApproveAdd", p), 11, C.OnAccent, "-218 4", "-88 -4");
-                Button(c, row, $"{Cmd} deny {q.Owner} {q.Sub.Id}", C.Danger, "1 0", "1 1", Msg("Deny", p), 11, C.Text, "-82 4", "-4 -4");
-            }
         }
 
         private void BuildBulkModal(CuiElementContainer c, BasePlayer p)
@@ -1334,7 +1302,7 @@ namespace Oxide.Plugins
                     Redraw(p, rail: true); return;
 
                 case "tab":
-                    s.Tab = arg.GetString(1, "all"); s.Page = 0; s.EditId = 0; s.Draft = null;
+                    s.Tab = arg.GetString(1, "all"); s.Page = 0; s.Draft = null;
                     if (s.Tab != "all") s.Collection = "";
                     if (s.Tab == "admin" && !admin) s.Tab = "all";
                     Redraw(p, header: true, rail: true, grid: true, side: true); return;
@@ -1458,16 +1426,6 @@ namespace Oxide.Plugins
             if (!admin) return;
             switch (action)
             {
-                case "editmode": s.EditMode = !s.EditMode; Redraw(p, grid: true); return;
-                case "edit":
-                    {
-                        Wallpaper w;
-                        if (!byId.TryGetValue(arg.GetULong(1), out w)) return;
-                        s.Tab = "admin"; s.EditId = w.Id;
-                        s.Draft = new AdminDraft { Id = w.Id.ToString(), Name = w.Name, Collection = w.Collection, Tags = string.Join(", ", w.Tags), Kind = w.Kind };
-                        Redraw(p, rail: true, grid: true); return;
-                    }
-                case "cancel": s.EditId = 0; s.Draft = null; Redraw(p, grid: true); return;
                 case "draft":
                     {
                         var d = s.Draft ?? (s.Draft = new AdminDraft { Kind = s.Kind });
@@ -1487,28 +1445,9 @@ namespace Oxide.Plugins
                 case "delete":
                     {
                         ulong id = arg.GetULong(1);
-                        if (catalogue.Items.RemoveAll(w => w.Id == id) > 0) { catalogueDirty = true; RebuildIndex(); Toast(p, Msg("Deleted", p, id)); }
-                        s.EditId = 0; s.Draft = null; s.Tab = "all";
+                        string name = byId.ContainsKey(id) ? byId[id].Name : id.ToString();
+                        if (catalogue.Items.RemoveAll(w => w.Id == id) > 0) { catalogueDirty = true; RebuildIndex(); Toast(p, Msg("Deleted", p, name)); }
                         Redraw(p, rail: true, grid: true, side: true); return;
-                    }
-                case "approve":
-                case "deny":
-                    {
-                        ulong owner = arg.GetULong(1), id = arg.GetULong(2);
-                        PlayerInfo info;
-                        if (!players.TryGetValue(owner, out info)) return;
-                        var sub = info.Mine.FirstOrDefault(m => m.Id == id);
-                        if (sub == null) return;
-                        sub.Status = action == "approve" ? "approved" : "denied";
-                        if (action == "approve" && arg.GetInt(3) == 1 && !byId.ContainsKey(id))
-                        {
-                            catalogue.Items.Add(new Wallpaper { Id = id, Name = sub.Name, Kind = sub.Kind, Collection = "Community", AddedBy = owner });
-                            catalogueDirty = true; RebuildIndex();
-                        }
-                        playersDirty = true;
-                        var ownerPlayer = BasePlayer.FindByID(owner);
-                        if (ownerPlayer != null) Toast(ownerPlayer, Msg(action == "approve" ? "YourApproved" : "YourDenied", ownerPlayer, sub.Name));
-                        Redraw(p, rail: true, grid: true); return;
                     }
             }
         }
@@ -1610,18 +1549,6 @@ namespace Oxide.Plugins
             var d = s.Draft;
             if (d == null) return;
             var tags = d.Tags.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries).Select(t => t.Trim()).Where(t => t.Length > 0).ToList();
-            if (s.EditId != 0)
-            {
-                Wallpaper w;
-                if (!byId.TryGetValue(s.EditId, out w)) return;
-                if (!string.IsNullOrEmpty(d.Name)) w.Name = d.Name;
-                w.Collection = d.Collection; w.Tags = tags; w.Kind = d.Kind;
-                catalogueDirty = true; RebuildIndex();
-                Toast(p, Msg("Saved", p, w.Name));
-                s.EditId = 0; s.Draft = null;
-                Redraw(p, grid: true, side: true);
-                return;
-            }
             // bulk paste: several IDs separated by spaces/commas all get the same collection and kind
             var ids = WorkshopId.Matches(d.Id).Cast<Match>().Select(m => ulong.Parse(m.Groups[1].Value)).Distinct().ToList();
             if (ids.Count == 0) { Toast(p, Msg("BadId", p)); return; }
@@ -1901,10 +1828,9 @@ namespace Oxide.Plugins
             var info = Info(p.userID);
             if (info.Mine.Any(m => m.Id == id)) { Toast(p, Msg("AlreadyMine", p)); return; }
             if (info.Mine.Count >= config.Submissions.MaxPerPlayer) { Toast(p, Msg("TooMany", p, config.Submissions.MaxPerPlayer)); return; }
-            bool trusted = !config.Submissions.RequireApproval || permission.UserHasPermission(p.UserIDString, PermTrusted) || IsAdmin(p);
-            var sub = new Submission { Id = id, Name = string.IsNullOrEmpty(knownTitle) ? id.ToString() : knownTitle, Kind = kind, Status = trusted ? "approved" : "pending" };
+            var sub = new Submission { Id = id, Name = string.IsNullOrEmpty(knownTitle) ? id.ToString() : knownTitle, Kind = kind };
             info.Mine.Add(sub); playersDirty = true;
-            Toast(p, Msg(trusted ? "SubmittedOk" : "SubmittedPending", p, Msg(kind.ToString(), p)));
+            Toast(p, Msg("SubmittedOk", p, Msg(kind.ToString(), p)));
             LookupSteam(id, (title, check) =>
             {
                 sub.SteamCheck = check;
@@ -1912,9 +1838,6 @@ namespace Oxide.Plugins
                 if (check == "not a Rust item") { sub.Status = "denied"; Toast(p, Msg("NotRust", p)); }
                 playersDirty = true;
                 if (p != null && p.IsConnected) Redraw(p, grid: true);
-                if (sub.Status == "pending")
-                    foreach (var a in BasePlayer.activePlayerList.Where(IsAdmin))
-                        Toast(a, Msg("NewSubmission", a, p.displayName));
             });
             if (openUi.Contains(p.userID) && !stayOnTab)
             {
@@ -2330,7 +2253,7 @@ namespace Oxide.Plugins
                 ["ThemeLoadedToast"] = "Loaded theme \"{0}\" into your tool",
                 ["ThemeLoaded"] = "the wall, floor and ceiling in your tool",
                 ["PageOf"] = "Page {0} / {1}", ["Count"] = "{0} wallpapers",
-                ["Pending"] = "AWAITING APPROVAL", ["Denied"] = "DENIED",
+                ["NotRustBadge"] = "NOT A RUST ITEM",
                 ["Selected"] = "In your tool: {0}", ["Selected1"] = "Selected: {0}",
                 ["Tips"] = "Holding the tool:  {0} next  ·  {1} copy  ·  {2} strip\nOwn keys: F1 → <color=#c8e6a0>bind q wpstudio.ui toggle</color>\nEverything else: the <b>Help</b> tab or /{3} help",
                 ["TabHelp"] = "Help",
@@ -2365,8 +2288,7 @@ namespace Oxide.Plugins
                 ["HelpBulk"] = "<color=#8cc63f><b>BULK PAINT / STRIP</b></color>\nLook at your building and press BULK. Choose PAINT or STRIP, which surfaces (ALL 3 uses the theme in your tool) and THIS LEVEL or WHOLE BUILDING. Up to {0} surfaces at a time. Outside faces are skipped.",
                 ["HelpThemes"] = "<color=#8cc63f><b>THEMES</b></color>\nA matching wall + floor + ceiling. In the Themes tab, type a name to save what's in your tool (up to {0}), or use /{1} theme <name>. Click a theme to load all three.",
                 ["HelpSubmit"] = "<color=#8cc63f><b>MY WALLPAPERS</b></color>\nAdd Steam Workshop wallpapers of your own (up to {1}): open My Wallpapers, paste a Workshop link or ID into the box and press Enter. Or use chat: /{0} add <link> [wall|floor|ceiling].",
-                ["HelpSubmitApproval"] = "<color=#8cc63f><b>MY WALLPAPERS</b></color>\nAdd Steam Workshop wallpapers of your own (up to {1}): open My Wallpapers, paste a Workshop link or ID into the box and press Enter, or use chat: /{0} add <link> [wall|floor|ceiling]. An admin approves them first.",
-                ["HelpTeam"] = "Your team can use each other's approved ones.",
+                ["HelpTeam"] = "Your team can use each other's too.",
                 ["HelpBinds"] = "<color=#8cc63f><b>KEY BINDS (any key, set once in F1)</b></color>\nbind q wpstudio.ui toggle   <color=#9aa0a0>open/close</color>\nbind c wpstudio.ui copy   <color=#9aa0a0>copy</color>\nbind x wpstudio.ui strip   <color=#9aa0a0>strip</color>\nbind z \"wpstudio.ui undo 1\"   <color=#9aa0a0>undo</color>\nbind v wpstudio.ui next   <color=#9aa0a0>next</color>   ·   bind n wpstudio.ui bulk   <color=#9aa0a0>bulk</color>",
                 ["HudKeys"] = "{0} next · {1} copy · {2} strip",
                 ["Binds"] = "Key binds (F1 console, any key): bind q wpstudio.ui toggle | bind c wpstudio.ui copy | bind x wpstudio.ui strip | bind z \"wpstudio.ui undo 1\" | bind v wpstudio.ui next | bind b wpstudio.ui prev | bind n wpstudio.ui bulk",
@@ -2379,18 +2301,15 @@ namespace Oxide.Plugins
                 ["SubmitBox"] = "Paste a Workshop link or ID, then Enter",
                 ["SubmitHint"] = "Add your own {1} wallpaper: paste a Steam Workshop link or ID and press Enter.\nOr in chat: /{0} add <link>",
                 ["AdminAdd"] = "ADD WALLPAPERS", ["AdminEdit"] = "EDIT WALLPAPER",
-                ["EditOn"] = "EDIT MODE: ON (gears on tiles)", ["EditOff"] = "EDIT MODE: OFF",
                 ["FieldId"] = "Workshop ID(s)", ["FieldName"] = "Name (blank = from Steam)", ["FieldCollection"] = "Collection", ["FieldTags"] = "Tags (comma separated)",
                 ["AdminTips"] = "Press Enter after typing in each box.\n\nSeveral IDs at once add a batch with the same collection.\n\nLinks can be pasted straight into the ID box. From the console or F1:\nwpstudio.add <link> [wall|floor|ceiling] [collection]\n\nImport a list of IDs from oxide/data/WallpaperStudio/import.json:\nwpstudio.importlist",
                 ["Save"] = "SAVE", ["Add"] = "ADD", ["Delete"] = "DELETE", ["Cancel"] = "CANCEL",
-                ["Queue"] = "SUBMISSIONS AWAITING APPROVAL ({0})", ["Approve"] = "APPROVE", ["ApproveAdd"] = "APPROVE + ADD", ["Deny"] = "DENY",
+                ["RemoveServer"] = "REMOVE FROM SERVER",
                 ["Saved"] = "Saved {0}", ["Deleted"] = "Deleted {0}", ["AddedN"] = "Added {0} ({1} already listed)",
                 ["BadId"] = "That doesn't look like a Workshop link or ID",
                 ["AlreadyMine"] = "You've already added that one", ["TooMany"] = "You can have up to {0} personal wallpapers",
-                ["SubmittedOk"] = "Added to My Wallpapers ({0})", ["SubmittedPending"] = "Sent for approval ({0}). It appears in My Wallpapers once approved.",
+                ["SubmittedOk"] = "Added to My Wallpapers ({0})",
                 ["NotRust"] = "That Workshop item isn't a Rust item",
-                ["NewSubmission"] = "{0} submitted a wallpaper for approval",
-                ["YourApproved"] = "Your wallpaper \"{0}\" was approved", ["YourDenied"] = "Your wallpaper \"{0}\" was denied",
                 ["CopyNothing"] = "Look at a wall, floor or ceiling that has wallpaper",
                 ["Copied"] = "Copied {0} ({1})",
                 ["StripNothing"] = "Look at a surface with wallpaper to strip it",

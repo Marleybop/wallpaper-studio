@@ -5,7 +5,7 @@ An Oxide plugin for Rust that turns the Wallpaper Tool into a proper decorating 
 - hotkeys, automatic wall/floor/ceiling switching, and copying from a wall
 - bulk paint or strip for a level or a whole building
 - full undo
-- player-submitted Steam Workshop wallpapers with optional admin approval
+- players' own Steam Workshop wallpapers (added straight to their personal list)
 
 Everything is in one file: [`plugin/WallpaperStudio.cs`](plugin/WallpaperStudio.cs).
 
@@ -32,8 +32,7 @@ each player's game downloads the textures from Steam.
 | `wallpaperstudio.bulk` | Bulk paint / strip a level or a building |
 | `wallpaperstudio.free` | No cloth cost: bulk jobs and, by default, single placements |
 | `wallpaperstudio.submit` | My Wallpapers: add your own Workshop wallpapers |
-| `wallpaperstudio.trusted` | Your submissions skip approval |
-| `wallpaperstudio.admin` | Admin tab: add/edit/delete, approve submissions, server themes, see every collection |
+| `wallpaperstudio.admin` | Admin tab and Browse → Add to server, remove server wallpapers, server themes, see every collection |
 
 Optional: gate a collection behind a permission of your choosing in the config
 (`"Collection permissions": { "Collection name": "wallpaperstudio.something" }`). Leave it empty and every

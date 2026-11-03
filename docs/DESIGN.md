@@ -58,7 +58,8 @@
 - **Submissions:** players add Workshop IDs.
   - A Steam `GetPublishedFileDetails` lookup fills in names and flags non-Rust items. Many wallpaper
     items are hidden from the public API but still work.
-  - Optional admin approval and team sharing.
+  - Usable straight away by that player (and their team if sharing is on). Items that aren't Rust
+    Workshop items are flagged.
 
 ## Testing
 Use a local dedicated server (SteamCMD app 258550 with Oxide). Start it, then run `tools/deploy-test.sh`
@@ -71,4 +72,4 @@ In game, check:
 - auto-switch while aiming at walls, floors and ceilings
 - bulk paint and strip at each scope
 - undo 1/5/all
-- submissions with approval on and off
+- adding personal wallpapers by link and from the browser
