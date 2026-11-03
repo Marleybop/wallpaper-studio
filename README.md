@@ -46,9 +46,14 @@ The menu has a **Help** tab that explains everything using the server's actual s
   - Close it with ✕ or by clicking outside.
   - Click a wallpaper to load it into the tool, then place it as normal.
   - **Plain** sets the tool back to Rust's standard wallpaper.
-- **Tabs:**
-  - All, Favourites (★), Recent, Collections (server-wide, set by admins), Themes, Help, My Wallpapers, Admin.
-  - VIEW (grid/list) and ICON SIZE (S/M/L) are saved per player.
+- **Menu layout:**
+  - **Wallpapers:** All, Favourites (★), Recent, Collections (server-wide, set by admins).
+  - **Yours:** My Wallpapers (your own Workshop finds) and Room Sets (a matching wall + floor + ceiling
+    you can load in one click).
+  - **Find more:** Steam Workshop (search the Workshop in game).
+  - **At the bottom:** Settings (view, icon size, auto surface, hotbar panel; saved per player), Help,
+    and Admin (admins only).
+  - The version number is shown next to the title.
 - **Hotkeys while holding the tool** (configurable):
   - **R:** next favourite (or recent).
   - **Shift+R:** copy the wallpaper you're looking at.
@@ -56,8 +61,8 @@ The menu has a **Help** tab that explains everything using the server's actual s
 - **Auto surface:** the tool switches to wall, floor or ceiling to match what you aim at. It's a
   per-player toggle (`/wp auto`).
 - **Hotbar panel:** shows a picture of what the tool will place (`/wp hud` to hide or show it).
-- **Themes:** a matching wall + floor + ceiling, saved per player. Admins can also save server themes.
-  Click a theme to load all three into the tool.
+- **Room Sets:** a matching wall + floor + ceiling, saved per player (`/wp set <name>`). Admins can also
+  save server room sets. Click one to load all three into the tool.
 - **Bulk** (`/wp bulk`):
   - Choose PAINT or STRIP, WALLS / FLOORS / CEILINGS / ALL 3, and THIS LEVEL or WHOLE BUILDING.
   - It shows the count and the cost or refund first, and runs in small batches so the server doesn't
@@ -102,6 +107,10 @@ client bind in the F1 console:
   settings.
 - Data is saved every 30 s, on server save and on unload. A broken config file is never overwritten;
   the plugin uses defaults in memory and logs a warning.
+
+## Versions
+See [CHANGELOG.md](CHANGELOG.md). Releases are tagged `vX.Y.Z` in git, and the version number also
+shows next to the title in the menu.
 
 ## Development
 See [docs/DESIGN.md](docs/DESIGN.md) for how it works.

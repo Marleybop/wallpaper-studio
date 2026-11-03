@@ -16,7 +16,7 @@ using HarmonyLib;
 
 namespace Oxide.Plugins
 {
-    [Info("Wallpaper Studio", "Marleybop", "1.7.0")]
+    [Info("Wallpaper Studio", "Marleybop", "1.8.0")]
     [Description("Fast wallpaper picker: search, collections, favourites, themes, list/grid views, eyedropper, bulk paint/strip with undo, and player-submitted Workshop wallpapers.")]
     public class WallpaperStudio : RustPlugin
     {
@@ -901,7 +901,7 @@ namespace Oxide.Plugins
         private void BuildHeader(CuiElementContainer c, BasePlayer p, UiState s)
         {
             Panel(c, UiFrame, UiHeader, C.Panel, "0 1", "1 1", "0 -60", "0 0");
-            Label(c, UiHeader, "WALLPAPER STUDIO", 20, C.Accent, TextAnchor.LowerLeft, "0 0", "0 1", "18 26", "300 -6", bold: true);
+            Label(c, UiHeader, $"WALLPAPER STUDIO  <size=11><color=#8a9090>v{Version}</color></size>", 20, C.Accent, TextAnchor.LowerLeft, "0 0", "0 1", "18 26", "330 -6", bold: true);
             Label(c, UiHeader, "by Marleybop", 11, C.TextDim, TextAnchor.UpperLeft, "0 0", "0 1", "19 6", "300 -36");
             if (s.Tab != "themes")
                 Chips(c, UiHeader, "0 0.5", 260, -17, 17, 100, Kinds.Select(k => new KeyValuePair<string, string>(((int)k).ToString(), Msg(k.ToString(), p).ToUpper())), ((int)s.Kind).ToString(), $"{Cmd} kind", 13);
@@ -911,49 +911,79 @@ namespace Oxide.Plugins
             Button(c, UiHeader, $"{Cmd} close", C.Danger, "1 0.5", "1 0.5", Msg("Close", p), 14, C.Text, "-136 -19", "-12 19");
         }
 
+        private struct RailTab { public string Key, Label; public RailTab(string k, string l) { Key = k; Label = l; } }
+
+        // Left rail: grouped tabs at the top, utility tabs pinned to the bottom. View options live in Settings.
         private void BuildRail(CuiElementContainer c, BasePlayer p, UiState s)
         {
             Panel(c, UiFrame, UiRail, C.Panel, "0 0", "0 1", "0 0", "180 -68");
-            var tabs = new List<KeyValuePair<string, string>>
+            var groups = new List<KeyValuePair<string, List<RailTab>>>
             {
-                new KeyValuePair<string, string>("all", Msg("TabAll", p)),
-                new KeyValuePair<string, string>("favs", Msg("TabFavs", p)),
-                new KeyValuePair<string, string>("recent", Msg("TabRecent", p)),
-                new KeyValuePair<string, string>("collections", Msg("TabCollections", p)),
-                new KeyValuePair<string, string>("themes", Msg("TabThemes", p)),
-                new KeyValuePair<string, string>("browse", Msg("TabBrowse", p)),
-                new KeyValuePair<string, string>("help", Msg("TabHelp", p)),
+                new KeyValuePair<string, List<RailTab>>(Msg("GroupWallpapers", p), new List<RailTab>
+                {
+                    new RailTab("all", Msg("TabAll", p)), new RailTab("favs", Msg("TabFavs", p)),
+                    new RailTab("recent", Msg("TabRecent", p)), new RailTab("collections", Msg("TabCollections", p)),
+                }),
+                new KeyValuePair<string, List<RailTab>>(Msg("GroupYours", p), new List<RailTab>()),
             };
             if (config.Submissions.Enabled && permission.UserHasPermission(p.UserIDString, PermSubmit))
-                tabs.Add(new KeyValuePair<string, string>("mine", Msg("TabMine", p)));
-            if (IsAdmin(p))
+                groups[1].Value.Add(new RailTab("mine", Msg("TabMine", p)));
+            groups[1].Value.Add(new RailTab("themes", Msg("TabThemes", p)));
+            if (BrowserReady || IsAdmin(p))
+                groups.Add(new KeyValuePair<string, List<RailTab>>(Msg("GroupFind", p), new List<RailTab> { new RailTab("browse", Msg("TabBrowse", p)) }));
+
+            int y = -10;
+            foreach (var g in groups)
             {
-                tabs.Add(new KeyValuePair<string, string>("admin", Msg("TabAdmin", p)));
-            }
-            int y = -12;
-            foreach (var t in tabs)
-            {
-                bool on = s.Tab == t.Key;
-                var b = Button(c, UiRail, $"{Cmd} tab {t.Key}", on ? C.PanelHi : "0 0 0 0", "0 1", "1 1", "", 13, C.Text, $"8 {y - 36}", $"-8 {y}");
-                if (on) Panel(c, b, CuiHelper.GetGuid(), C.Accent, "0 0", "0 1", "0 4", "4 -4");
-                Label(c, b, t.Value, 14, on ? C.Text : C.TextDim, TextAnchor.MiddleLeft, "0 0", "1 1", "16 0", "0 0", bold: on);
-                y -= 40;
+                if (g.Value.Count == 0) continue;
+                Label(c, UiRail, g.Key, 10, C.TextFaint, TextAnchor.MiddleLeft, "0 1", "1 1", $"16 {y - 18}", $"-8 {y}", bold: true);
+                y -= 20;
+                foreach (var t in g.Value) { RailButton(c, s, t, "0 1", "1 1", y - 32, y); y -= 35; }
+                y -= 8;
             }
             if (!string.IsNullOrEmpty(s.Collection) && s.Tab == "all")
             {
-                Label(c, UiRail, Msg("Filtered", p, s.Collection), 12, C.TextDim, TextAnchor.LowerLeft, "0 0", "1 0", "14 160", "-8 196");
-                Button(c, UiRail, $"{Cmd} collection", C.PanelHi, "0 0", "1 0", Msg("ClearFilter", p), 12, C.Text, "8 128", "-8 154");
+                Label(c, UiRail, Msg("Filtered", p, s.Collection), 12, C.TextDim, TextAnchor.UpperLeft, "0 1", "1 1", $"16 {y - 40}", $"-8 {y}");
+                Button(c, UiRail, $"{Cmd} collection", C.PanelHi, "0 1", "1 1", Msg("ClearFilter", p), 12, C.Text, $"8 {y - 68}", $"-8 {y - 42}");
             }
-            // view settings (saved per player)
-            bool auto = AutoSwitchOn(p);
-            Button(c, UiRail, $"{Cmd} auto", auto ? C.AccentDim : C.PanelHi, "0 0", "1 0", auto ? Msg("AutoOn", p) : Msg("AutoOff", p), 11, auto ? C.Text : C.TextDim, "8 92", "-8 118");
-            Label(c, UiRail, Msg("View", p), 11, C.TextDim, TextAnchor.MiddleLeft, "0 0", "1 0", "14 62", "0 80");
-            Chips(c, UiRail, "0 0", 14, 38, 62, 74, new[] { new KeyValuePair<string, string>("grid", Msg("Grid", p)), new KeyValuePair<string, string>("list", Msg("List", p)) }, LayoutOf(p), $"{Cmd} layout", 11);
-            if (LayoutOf(p) == "grid")
+
+            // bottom: settings, help, admin
+            var bottom = new List<RailTab> { new RailTab("settings", Msg("TabSettings", p)), new RailTab("help", Msg("TabHelp", p)) };
+            if (IsAdmin(p)) bottom.Add(new RailTab("admin", Msg("TabAdmin", p)));
+            int by = 8 + bottom.Count * 35;
+            Panel(c, UiRail, CuiHelper.GetGuid(), C.PanelHi, "0 0", "1 0", $"12 {by + 4}", $"-12 {by + 5}");
+            foreach (var t in bottom) { RailButton(c, s, t, "0 0", "1 0", by - 32, by); by -= 35; }
+        }
+
+        private void RailButton(CuiElementContainer c, UiState s, RailTab t, string amin, string amax, int y0, int y1)
+        {
+            bool on = s.Tab == t.Key;
+            var b = Button(c, UiRail, $"{Cmd} tab {t.Key}", on ? C.PanelHi : "0 0 0 0", amin, amax, "", 13, C.Text, $"8 {y0}", $"-8 {y1}");
+            if (on) Panel(c, b, CuiHelper.GetGuid(), C.Accent, "0 0", "0 1", "0 4", "4 -4");
+            Label(c, b, t.Label, 14, on ? C.Text : C.TextDim, TextAnchor.MiddleLeft, "0 0", "1 1", "16 0", "0 0", bold: on);
+        }
+
+        // Settings tab: per-player preferences, each with a one-line explanation.
+        private void BuildSettings(CuiElementContainer c, BasePlayer p)
+        {
+            Label(c, UiGrid, Msg("SettingsTitle", p), 16, C.Accent, TextAnchor.MiddleLeft, "0 1", "1 1", "0 -30", "0 0", bold: true);
+            int y = -50;
+            Action<string, string> row = (title, help) =>
             {
-                Label(c, UiRail, Msg("IconSize", p), 11, C.TextDim, TextAnchor.MiddleLeft, "0 0", "1 0", "14 10", "80 32");
-                Chips(c, UiRail, "0 0", 82, 10, 32, 26, new[] { "S", "M", "L" }.Select(x => new KeyValuePair<string, string>(x, x)), SizeOf(p), $"{Cmd} size", 11);
-            }
+                Label(c, UiGrid, title, 13, C.Text, TextAnchor.MiddleLeft, "0 1", "0.4 1", $"0 {y - 30}", $"0 {y}", bold: true);
+                Label(c, UiGrid, help, 11, C.TextDim, TextAnchor.UpperLeft, "0 1", "1 1", $"0 {y - 56}", $"0 {y - 32}");
+            };
+            row(Msg("View", p), Msg("ViewHelp", p));
+            Chips(c, UiGrid, "0.4 1", 0, y - 30, y, 90, new[] { new KeyValuePair<string, string>("grid", Msg("Grid", p)), new KeyValuePair<string, string>("list", Msg("List", p)) }, LayoutOf(p), $"{Cmd} layout", 12);
+            y -= 76;
+            row(Msg("IconSize", p), Msg("IconSizeHelp", p));
+            Chips(c, UiGrid, "0.4 1", 0, y - 30, y, 50, new[] { "S", "M", "L" }.Select(x => new KeyValuePair<string, string>(x, x)), SizeOf(p), $"{Cmd} size", 12);
+            y -= 76;
+            row(Msg("AutoTitle", p), Msg("AutoHelp", p));
+            Chips(c, UiGrid, "0.4 1", 0, y - 30, y, 70, new[] { new KeyValuePair<string, string>("on", Msg("On", p)), new KeyValuePair<string, string>("off", Msg("Off", p)) }, AutoSwitchOn(p) ? "on" : "off", $"{Cmd} setauto", 12);
+            y -= 76;
+            row(Msg("HudTitle", p), Msg("HudHelp", p));
+            Chips(c, UiGrid, "0.4 1", 0, y - 30, y, 70, new[] { new KeyValuePair<string, string>("on", Msg("On", p)), new KeyValuePair<string, string>("off", Msg("Off", p)) }, HudOn(p) ? "on" : "off", $"{Cmd} sethud", 12);
         }
 
         private void BuildGrid(CuiElementContainer c, BasePlayer p, UiState s, global::WallpaperPlanner tool)
@@ -963,6 +993,7 @@ namespace Oxide.Plugins
             if (s.Tab == "themes") { BuildThemes(c, p, s, tool); return; }
             if (s.Tab == "admin") { BuildAdmin(c, p, s); return; }
             if (s.Tab == "help") { BuildHelp(c, p); return; }
+            if (s.Tab == "settings") { BuildSettings(c, p); return; }
             if (s.Tab == "browse") { BuildBrowse(c, p, s); return; }
 
             var items = Query(p, s);
@@ -1299,7 +1330,14 @@ namespace Oxide.Plugins
                 case "auto":
                     Info(p.userID).AutoSwitch = !AutoSwitchOn(p); playersDirty = true;
                     Toast(p, AutoSwitchOn(p) ? Msg("AutoOn", p) : Msg("AutoOff", p));
-                    Redraw(p, rail: true); return;
+                    Redraw(p, grid: true); return;
+                case "setauto":
+                    Info(p.userID).AutoSwitch = arg.GetString(1) == "on"; playersDirty = true;
+                    Redraw(p, grid: true); return;
+                case "sethud":
+                    Info(p.userID).Hud = arg.GetString(1) == "on"; playersDirty = true;
+                    if (tool != null) ShowHud(p, tool);
+                    Redraw(p, grid: true); return;
 
                 case "tab":
                     s.Tab = arg.GetString(1, "all"); s.Page = 0; s.Draft = null;
@@ -1334,14 +1372,14 @@ namespace Oxide.Plugins
                         string l = arg.GetString(1);
                         if (l != "grid" && l != "list") return;
                         Info(p.userID).Layout = l; playersDirty = true; s.Page = 0;
-                        Redraw(p, rail: true, grid: true); return;
+                        Redraw(p, grid: true); return;
                     }
                 case "size":
                     {
                         string z = arg.GetString(1).ToUpper();
                         if (!GridSizes.ContainsKey(z)) return;
                         Info(p.userID).Size = z; playersDirty = true; s.Page = 0;
-                        Redraw(p, rail: true, grid: true); return;
+                        Redraw(p, grid: true); return;
                     }
 
                 case "apply":
@@ -1479,6 +1517,7 @@ namespace Oxide.Plugins
                     return;
                 case "paint": case "bulk": OpenBulk(player); return;
                 case "undo": Undo(player, ParseUndoCount(args.Length > 1 ? args[1] : "1")); return;
+                case "set":
                 case "theme":
                     if (args.Length < 2) { player.ChatMessage(Msg("Usage", player, command)); return; }
                     SaveTheme(player, string.Join(" ", args.Skip(1)), false); return;
@@ -2233,7 +2272,14 @@ namespace Oxide.Plugins
                 ["SearchHint"] = "Search name, tag or collection, then Enter",
                 ["Close"] = "✕  CLOSE",
                 ["TabAll"] = "All", ["TabFavs"] = "Favourites", ["TabRecent"] = "Recent",
-                ["TabCollections"] = "Collections", ["TabThemes"] = "Themes", ["TabMine"] = "My Wallpapers", ["TabAdmin"] = "Admin",
+                ["TabCollections"] = "Collections", ["TabThemes"] = "Room Sets",
+                ["GroupWallpapers"] = "WALLPAPERS", ["GroupYours"] = "YOURS", ["GroupFind"] = "FIND MORE",
+                ["TabSettings"] = "Settings", ["SettingsTitle"] = "YOUR SETTINGS (saved for you)",
+                ["ViewHelp"] = "Show wallpapers as picture tiles, or as a list with names and collections.",
+                ["IconSizeHelp"] = "Tile size in grid view. S fits the most on a page, L shows the biggest pictures.",
+                ["AutoTitle"] = "AUTO SURFACE", ["AutoHelp"] = "The tool switches to wall, floor or ceiling to match what you aim at.",
+                ["HudTitle"] = "HOTBAR PANEL", ["HudHelp"] = "A small picture of what the tool will place, shown next to your hotbar.",
+                ["On"] = "ON", ["Off"] = "OFF", ["TabMine"] = "My Wallpapers", ["TabAdmin"] = "Admin",
                 ["Filtered"] = "Showing collection:\n<b>{0}</b>", ["ClearFilter"] = "Show everything",
                 ["View"] = "VIEW", ["Grid"] = "GRID", ["List"] = "LIST", ["IconSize"] = "ICON SIZE",
                 ["EmptyFavs"] = "No favourites yet.\nClick the star on any wallpaper.",
@@ -2243,21 +2289,21 @@ namespace Oxide.Plugins
                 ["EmptyAll"] = "No wallpapers for this surface yet.",
                 ["CollectionsHelp"] = "Collections are set up by the server admins. Click one to browse it.",
                 ["NoCollections"] = "No collections for this surface yet.",
-                ["ThemesHelp"] = "A theme is a matching wall + floor + ceiling. Click one to load all three into your tool, then use BULK > ALL 3 to do a whole room.",
-                ["ThemeSaveHint"] = "Save what's in your tool now as a theme: type a name, then Enter",
+                ["ThemesHelp"] = "A room set is a matching wall + floor + ceiling. Click one to load all three into your tool, then use BULK › ALL 3 to do a whole room at once.",
+                ["ThemeSaveHint"] = "Save what's in your tool now as a room set: type a name, then Enter",
                 ["ThemeMine"] = "MINE", ["ThemeServer"] = "SERVER",
-                ["NoThemes"] = "No themes yet. Pick a wall, floor and ceiling, then save them above.",
-                ["ThemeNeedsName"] = "Give the theme a name",
-                ["TooManyThemes"] = "You can save up to {0} themes",
-                ["ThemeSaved"] = "Saved theme \"{0}\"",
-                ["ThemeLoadedToast"] = "Loaded theme \"{0}\" into your tool",
+                ["NoThemes"] = "No room sets yet. Pick a wall, floor and ceiling, then save them above.",
+                ["ThemeNeedsName"] = "Give the room set a name",
+                ["TooManyThemes"] = "You can save up to {0} room sets",
+                ["ThemeSaved"] = "Saved room set \"{0}\"",
+                ["ThemeLoadedToast"] = "Loaded room set \"{0}\" into your tool",
                 ["ThemeLoaded"] = "the wall, floor and ceiling in your tool",
                 ["PageOf"] = "Page {0} / {1}", ["Count"] = "{0} wallpapers",
                 ["NotRustBadge"] = "NOT A RUST ITEM",
                 ["Selected"] = "In your tool: {0}", ["Selected1"] = "Selected: {0}",
                 ["Tips"] = "Holding the tool:  {0} next  ·  {1} copy  ·  {2} strip\nOwn keys: F1 → <color=#c8e6a0>bind q wpstudio.ui toggle</color>\nEverything else: the <b>Help</b> tab or /{3} help",
                 ["TabHelp"] = "Help",
-                ["TabBrowse"] = "Browse Workshop",
+                ["TabBrowse"] = "Steam Workshop",
                 ["HelpBrowse"] = "<color=#8cc63f><b>BROWSE WORKSHOP</b></color>\nSearch the Steam Workshop without leaving the game: pick a surface, type in the search box, sort by trending, top rated, most used or newest, then click a result to preview it and add it.",
                 ["BrowseNoKey"] = "The Workshop browser isn't set up on this server yet.",
                 ["BrowseNoKeyAdmin"] = "To turn on the Workshop browser, add a Steam Web API key to the config\n(\"Workshop browser\" → \"Steam Web API key\"), then reload the plugin.\nGet one free at steamcommunity.com/dev/apikey.",
@@ -2276,17 +2322,17 @@ namespace Oxide.Plugins
                 ["AddedServer"] = "Added \"{0}\" to the server ({1})",
                 ["HelpNoKey"] = "(no key on this server)",
                 ["HelpOpen"] = "<color=#8cc63f><b>OPENING AND CLOSING</b></color>\nHold the Wallpaper Tool and press <b>{0}</b>, or type <b>/{1}</b>. Close it with ✕ or by clicking outside it. Rust doesn't send keys to the server while a menu is open, so to close it with a key, bind one yourself (see Key binds).",
-                ["HelpPick"] = "<color=#8cc63f><b>PICKING</b></color>\nClick a wallpaper to load it into your tool, then place it as normal. WALL / FLOOR / CEILING switches the surface. ★ adds a favourite. <b>Plain</b> sets the tool back to Rust's standard wallpaper. Search covers names, tags and collections (press Enter). VIEW and ICON SIZE are saved for you.",
+                ["HelpPick"] = "<color=#8cc63f><b>PICKING</b></color>\nClick a wallpaper to load it into your tool, then place it as normal. WALL / FLOOR / CEILING switches the surface. ★ adds a favourite. <b>Plain</b> sets the tool back to Rust's standard wallpaper. Search covers names, tags and collections (press Enter). Your view (grid or list, icon size) is in Settings.",
                 ["HelpHotkeys"] = "<color=#8cc63f><b>HOTKEYS (while holding the tool)</b></color>\n<b>{0}</b>: next favourite (or recent if you have none)\n<b>{1}</b>: copy the wallpaper you're looking at\n<b>{2}</b>: strip the surface you're looking at (cloth back)",
                 ["HelpHotkeysOff"] = "<color=#8cc63f><b>HOTKEYS</b></color>\nTurned off on this server. Use the buttons, chat commands or your own binds.",
-                ["HelpAutoOn"] = "<color=#8cc63f><b>AUTO SURFACE: ON</b></color>\nThe tool switches to wall, floor or ceiling to match what you aim at. Turn it off in the left panel or with /{0} auto.",
-                ["HelpAutoOff"] = "<color=#8cc63f><b>AUTO SURFACE: OFF</b></color>\nSwitch surfaces yourself, or turn auto on in the left panel or with /{0} auto.",
+                ["HelpAutoOn"] = "<color=#8cc63f><b>AUTO SURFACE: ON</b></color>\nThe tool switches to wall, floor or ceiling to match what you aim at. Turn it off in Settings or with /{0} auto.",
+                ["HelpAutoOff"] = "<color=#8cc63f><b>AUTO SURFACE: OFF</b></color>\nSwitch surfaces yourself, or turn it on in Settings or with /{0} auto.",
                 ["HelpHud"] = "<color=#8cc63f><b>HOTBAR PANEL</b></color>\nThe panel next to your hotbar shows a picture of what the tool will place. Hide or show it with /{0} hud.",
                 ["HelpCost"] = "<color=#8cc63f><b>COST</b></color>\nEvery placement costs <b>{0} {1}</b>, whatever the design. Stripping gives it back.",
                 ["HelpCostFree"] = "<color=#8cc63f><b>COST</b></color>\nPlacing wallpaper is <b>free</b> for you on this server.",
                 ["HelpUndo"] = "<color=#8cc63f><b>UNDO</b></color>\nEvery placement, strip and bulk job can be undone: your last {0} actions for {1} minutes. Use UNDO 1 / 5 / ALL in the side panel, or /{2} undo [number|all]. Cloth is settled automatically.",
-                ["HelpBulk"] = "<color=#8cc63f><b>BULK PAINT / STRIP</b></color>\nLook at your building and press BULK. Choose PAINT or STRIP, which surfaces (ALL 3 uses the theme in your tool) and THIS LEVEL or WHOLE BUILDING. Up to {0} surfaces at a time. Outside faces are skipped.",
-                ["HelpThemes"] = "<color=#8cc63f><b>THEMES</b></color>\nA matching wall + floor + ceiling. In the Themes tab, type a name to save what's in your tool (up to {0}), or use /{1} theme <name>. Click a theme to load all three.",
+                ["HelpBulk"] = "<color=#8cc63f><b>BULK PAINT / STRIP</b></color>\nLook at your building and press BULK. Choose PAINT or STRIP, which surfaces (ALL 3 uses the room set in your tool) and THIS LEVEL or WHOLE BUILDING. Up to {0} surfaces at a time. Outside faces are skipped.",
+                ["HelpThemes"] = "<color=#8cc63f><b>ROOM SETS</b></color>\nA matching wall + floor + ceiling. In Room Sets, type a name to save what's in your tool (up to {0}), or use /{1} set <name>. Click a set to load all three.",
                 ["HelpSubmit"] = "<color=#8cc63f><b>MY WALLPAPERS</b></color>\nAdd Steam Workshop wallpapers of your own (up to {1}): open My Wallpapers, paste a Workshop link or ID into the box and press Enter. Or use chat: /{0} add <link> [wall|floor|ceiling].",
                 ["HelpTeam"] = "Your team can use each other's too.",
                 ["HelpBinds"] = "<color=#8cc63f><b>KEY BINDS (any key, set once in F1)</b></color>\nbind q wpstudio.ui toggle   <color=#9aa0a0>open/close</color>\nbind c wpstudio.ui copy   <color=#9aa0a0>copy</color>\nbind x wpstudio.ui strip   <color=#9aa0a0>strip</color>\nbind z \"wpstudio.ui undo 1\"   <color=#9aa0a0>undo</color>\nbind v wpstudio.ui next   <color=#9aa0a0>next</color>   ·   bind n wpstudio.ui bulk   <color=#9aa0a0>bulk</color>",
@@ -2332,7 +2378,7 @@ namespace Oxide.Plugins
                 ["NothingToUndo"] = "Nothing to undo", ["Undone"] = "Undid {0} action(s), restored {1} surfaces",
                 ["UndoSkipped"] = "({0} skipped: changed or destroyed since)",
                 ["Cycled"] = "{0}  ({1}/{2} {3})", ["CycleEmpty"] = "Star some {0} wallpapers to cycle through them with {1}",
-                ["Usage"] = "/{0}: menu · /{0} add <link> [wall|floor|ceiling] · /{0} theme <name> · /{0} copy · /{0} strip · /{0} bulk · /{0} undo [n|all] · /{0} auto · /{0} hud",
+                ["Usage"] = "/{0}: menu · /{0} add <link> [wall|floor|ceiling] · /{0} set <name> · /{0} copy · /{0} strip · /{0} bulk · /{0} undo [n|all] · /{0} auto · /{0} hud",
             }, this);
         }
 
