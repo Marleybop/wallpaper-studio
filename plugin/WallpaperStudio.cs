@@ -16,7 +16,7 @@ using HarmonyLib;
 
 namespace Oxide.Plugins
 {
-    [Info("Wallpaper Studio", "Marleybop", "1.8.1")]
+    [Info("Wallpaper Studio", "Marleybop", "1.9.0")]
     [Description("Fast wallpaper picker: search, collections, favourites, themes, list/grid views, eyedropper, bulk paint/strip with undo, and player-submitted Workshop wallpapers.")]
     public class WallpaperStudio : RustPlugin
     {
@@ -609,6 +609,9 @@ namespace Oxide.Plugins
             public Kind Kind = Kind.Wall;
             public AdminDraft Draft;
             public bool ThemeToServer;       // admins: "save theme" goes to server themes
+            public Theme SetDraft;           // room set being built in the Room Sets tab
+            public string SetName = "";
+            public Kind? PickingFor;         // picking a wallpaper for one slot of the draft
             public string BrowseSort = "trend";   // trend | top | new | subs
             public int BrowsePage = 1;
             public ulong BrowseSel;
@@ -1040,7 +1043,12 @@ namespace Oxide.Plugins
                 Button(c, UiGrid, $"{Cmd} page {s.Page + 1}", C.PanelHi, "0.5 0", "0.5 0", "›", 16, C.Text, "68 0", "106 28");
                 Button(c, UiGrid, $"{Cmd} page {pages - 1}", C.PanelHi, "0.5 0", "0.5 0", "»", 16, C.Text, "112 0", "150 28");
             }
-            Label(c, UiGrid, Msg("Count", p, items.Count), 11, C.TextDim, TextAnchor.MiddleLeft, "0 0", "0.3 0", "2 0", "0 28");
+            if (s.PickingFor != null)
+            {
+                Label(c, UiGrid, Msg("Picking", p, Msg(s.PickingFor.Value.ToString(), p).ToLower()), 12, C.Gold, TextAnchor.MiddleLeft, "0 0", "0.42 0", "2 0", "0 28", bold: true);
+                Button(c, UiGrid, $"{Cmd} pickcancel", C.PanelHi, "0.42 0", "0.42 0", Msg("Cancel", p), 11, C.Text, "0 2", "70 26");
+            }
+            else Label(c, UiGrid, Msg("Count", p, items.Count), 11, C.TextDim, TextAnchor.MiddleLeft, "0 0", "0.3 0", "2 0", "0 28");
         }
 
         private void TileExtras(CuiElementContainer c, BasePlayer p, UiState s, Wallpaper w, string parent, string favAnchor, string favOff0, string favOff1, string gearAnchor, string gearOff0, string gearOff1)
@@ -1156,51 +1164,104 @@ namespace Oxide.Plugins
         private void BuildThemes(CuiElementContainer c, BasePlayer p, UiState s, global::WallpaperPlanner tool)
         {
             bool admin = IsAdmin(p);
-            Label(c, UiGrid, Msg("ThemesHelp", p), 12, C.TextDim, TextAnchor.UpperLeft, "0 1", "1 1", "0 -36", "0 0");
-            // save current selection
-            int x = 0;
-            if (admin)
-            {
-                x = Chips(c, UiGrid, "0 1", 0, -74, -44, 92, new[] { new KeyValuePair<string, string>("mine", Msg("ThemeMine", p)), new KeyValuePair<string, string>("server", Msg("ThemeServer", p)) }, s.ThemeToServer ? "server" : "mine", $"{Cmd} themeto", 11);
-            }
-            Input(c, UiGrid, $"{Cmd} savetheme", "", Msg("ThemeSaveHint", p), "0 1", "1 1", $"{x} -74", "0 -44");
+            var d = s.SetDraft ?? (s.SetDraft = DraftFromTool(tool));
 
+            // ---- builder: three slots, fill helpers, name + save
+            Label(c, UiGrid, Msg("SetNew", p), 14, C.Accent, TextAnchor.MiddleLeft, "0 1", "0.7 1", "0 -24", "0 0", bold: true);
+            Label(c, UiGrid, Msg("SetNewHelp", p), 11, C.TextDim, TextAnchor.MiddleRight, "0.3 1", "1 1", "0 -24", "0 0");
+            for (int k = 0; k < 3; k++)
+            {
+                var kind = Kinds[k];
+                ulong id = d.Get(kind);
+                float x0 = k * 0.34f, x1 = x0 + 0.32f;
+                string card = CuiHelper.GetGuid();
+                Panel(c, UiGrid, card, C.Tile, $"{x0} 1", $"{x1} 1", "0 -196", "0 -30");
+                Label(c, card, Msg(kind.ToString(), p).ToUpper(), 11, C.Accent, TextAnchor.UpperLeft, "0 1", "1 1", "8 -20", "-8 -4", bold: true);
+                if (id == 0) Label(c, card, Msg("Plain", p), 12, C.TextFaint, TextAnchor.MiddleCenter, "0 0", "0.5 1", "8 34", "0 -22");
+                else Icon(c, card, ItemIdFor(kind), id, "0 0", "0.5 1", "8 34", "0 -22");
+                Label(c, card, Trim(NameOf(p, id, kind), 22), 12, C.Text, TextAnchor.MiddleLeft, "0.5 0", "1 1", "6 34", "-6 -22", bold: true);
+                Button(c, card, $"{Cmd} setchange {(int)kind}", C.PanelHi, "0 0", "1 0", Msg("SetChange", p), 11, C.Text, "6 6", "-6 28");
+            }
+            Button(c, UiGrid, $"{Cmd} setfill room", C.AccentDim, "0 1", "0 1", Msg("SetCopyRoom", p), 11, C.Text, "0 -236", "180 -206");
+            Button(c, UiGrid, $"{Cmd} setfill tool", C.PanelHi, "0 1", "0 1", Msg("SetFromTool", p), 11, C.Text, "186 -236", "336 -206");
+            Button(c, UiGrid, $"{Cmd} setfill clear", C.PanelHi, "0 1", "0 1", Msg("SetClear", p), 11, C.TextDim, "342 -236", "430 -206");
+            Input(c, UiGrid, $"{Cmd} setname", s.SetName, Msg("SetNameHint", p), "0 1", "0.56 1", "0 -276", "0 -246");
+            Button(c, UiGrid, $"{Cmd} setsave", C.Accent, "0.57 1", "0.71 1", Msg("SetSave", p), 12, C.OnAccent, "0 -276", "0 -246");
+            if (admin)
+                Chips(c, UiGrid, "0.72 1", 0, -276, -246, 84, new[] { new KeyValuePair<string, string>("mine", Msg("ThemeMine", p)), new KeyValuePair<string, string>("server", Msg("ThemeServer", p)) }, s.ThemeToServer ? "server" : "mine", $"{Cmd} themeto", 11);
+
+            // ---- saved sets
+            Label(c, UiGrid, Msg("SetSaved", p), 14, C.Accent, TextAnchor.MiddleLeft, "0 1", "1 1", "0 -310", "0 -286", bold: true);
             var themes = ThemesFor(p).Where(t => string.IsNullOrEmpty(s.Search) || t.Name.IndexOf(s.Search, StringComparison.OrdinalIgnoreCase) >= 0).ToList();
-            if (themes.Count == 0) { Label(c, UiGrid, Msg("NoThemes", p), 15, C.TextDim, TextAnchor.MiddleCenter, "0 0", "1 0.85"); return; }
-            int cols = 3, rows = 3, per = cols * rows;
+            if (themes.Count == 0) { Label(c, UiGrid, Msg("NoThemes", p), 13, C.TextDim, TextAnchor.UpperLeft, "0 1", "1 1", "0 -350", "0 -316"); return; }
+            int cols = 4, per = 8;
             int pages = Math.Max(1, (themes.Count + per - 1) / per);
             s.Page = Mathf.Clamp(s.Page, 0, pages - 1);
-            float gap = 0.015f, cw = (1f - gap * (cols - 1)) / cols, top = 0.86f, ch = (top - 0.07f - gap * (rows - 1)) / rows;
             var shown = themes.Skip(s.Page * per).Take(per).ToList();
+            float gap = 0.012f, cw = (1f - gap * (cols - 1)) / cols;
             for (int i = 0; i < shown.Count; i++)
             {
                 var t = shown[i];
                 int col = i % cols, row = i / cols;
-                float x0 = col * (cw + gap), y1 = top - row * (ch + gap);
+                float x0 = col * (cw + gap);
+                int top = -318 - row * 132;
                 bool loaded = tool != null && tool.wallSkinID == t.Wall && tool.flooringSkinID == t.Floor && tool.ceilingSkinID == t.Ceiling;
                 string tile = CuiHelper.GetGuid();
-                Panel(c, UiGrid, tile, loaded ? C.Accent : C.Tile, $"{x0} {y1 - ch}", $"{x0 + cw} {y1}");
-                string inner = CuiHelper.GetGuid();
-                Panel(c, tile, inner, C.Tile, "0 0", "1 1", loaded ? "3 3" : "0 0", loaded ? "-3 -3" : "0 0");
+                Panel(c, UiGrid, tile, loaded ? C.AccentDim : C.Tile, $"{x0} 1", $"{x0 + cw} 1", $"0 {top - 124}", $"0 {top}");
                 for (int k = 0; k < 3; k++)
                 {
-                    var kind = Kinds[k];
-                    ulong id = t.Get(kind);
-                    string min = $"{0.03 + k * 0.32} 0.3", max = $"{0.03 + k * 0.32 + 0.30} 0.96";
-                    if (id == 0) Label(c, inner, Msg(kind.ToString(), p) + "\n" + Msg("Plain", p), 10, C.TextFaint, TextAnchor.MiddleCenter, min, max);
-                    else Icon(c, inner, ItemIdFor(kind), id, min, max);
+                    ulong id = t.Get(Kinds[k]);
+                    string min = $"{0.03 + k * 0.32} 0.42", max = $"{0.03 + k * 0.32 + 0.30} 0.97";
+                    if (id == 0) Label(c, tile, Msg("Plain", p), 9, C.TextFaint, TextAnchor.MiddleCenter, min, max);
+                    else Icon(c, tile, ItemIdFor(Kinds[k]), id, min, max);
                 }
-                Label(c, inner, Trim(t.Name, 28) + (t.Owner == 0 ? "  <color=#9aa0a0>· " + Msg("ThemeServer", p) + "</color>" : ""), 13, C.Text, TextAnchor.MiddleCenter, "0 0", "1 0.28", bold: true);
-                Button(c, inner, $"{Cmd} loadtheme {Uri.EscapeDataString(t.Name)} {t.Owner}", "0 0 0 0", "0 0", "1 1");
+                Label(c, tile, Trim(t.Name, 22) + (t.Owner == 0 ? " <color=#9aa0a0>· " + Msg("ThemeServer", p) + "</color>" : ""), 11, C.Text, TextAnchor.MiddleCenter, "0 0.24", "1 0.42", bold: true);
+                string key = $"{Uri.EscapeDataString(t.Name)} {t.Owner}";
+                Button(c, tile, $"{Cmd} loadtheme {key}", C.PanelHi, "0 0", "0.5 0.22", Msg("SetUse", p), 10, C.Text, "4 4", "-2 0");
+                if (config.Bulk.Enabled && permission.UserHasPermission(p.UserIDString, PermBulk))
+                    Button(c, tile, $"{Cmd} setpaint {key}", C.AccentDim, "0.5 0", "1 0.22", Msg("SetPaint", p), 10, C.Text, "2 4", "-4 0");
                 if (t.Owner == p.userID || (t.Owner == 0 && admin))
-                    Button(c, inner, $"{Cmd} deltheme {Uri.EscapeDataString(t.Name)} {t.Owner}", "0 0 0 0.5", "1 1", "1 1", "✕", 11, C.Danger, "-24 -24", "-3 -3");
+                    Button(c, tile, $"{Cmd} deltheme {key}", "0 0 0 0.5", "1 1", "1 1", "✕", 11, C.Danger, "-22 -22", "-2 -2");
             }
             if (pages > 1)
             {
-                Button(c, UiGrid, $"{Cmd} page {s.Page - 1}", C.PanelHi, "0.5 0", "0.5 0", "‹", 16, C.Text, "-106 0", "-68 28");
-                Label(c, UiGrid, Msg("PageOf", p, s.Page + 1, pages), 13, C.Text, TextAnchor.MiddleCenter, "0.5 0", "0.5 0", "-62 0", "62 28");
-                Button(c, UiGrid, $"{Cmd} page {s.Page + 1}", C.PanelHi, "0.5 0", "0.5 0", "›", 16, C.Text, "68 0", "106 28");
+                Button(c, UiGrid, $"{Cmd} page {s.Page - 1}", C.PanelHi, "1 0", "1 0", "‹", 14, C.Text, "-150 0", "-120 24");
+                Label(c, UiGrid, Msg("PageOf", p, s.Page + 1, pages), 12, C.Text, TextAnchor.MiddleCenter, "1 0", "1 0", "-118 0", "-34 24");
+                Button(c, UiGrid, $"{Cmd} page {s.Page + 1}", C.PanelHi, "1 0", "1 0", "›", 14, C.Text, "-32 0", "-2 24");
             }
+        }
+
+        private static Theme DraftFromTool(global::WallpaperPlanner tool)
+        {
+            return tool == null ? new Theme() : new Theme { Wall = tool.wallSkinID, Floor = tool.flooringSkinID, Ceiling = tool.ceilingSkinID };
+        }
+
+        private static void SetSlot(Theme t, Kind k, ulong id)
+        {
+            if (k == Kind.Floor) t.Floor = id; else if (k == Kind.Ceiling) t.Ceiling = id; else t.Wall = id;
+        }
+
+        // Read the wallpaper of the room the player stands in: the wall they look at (or the nearest papered wall),
+        // the floor under them and the ceiling above them.
+        private Theme ReadRoom(BasePlayer p)
+        {
+            var t = new Theme();
+            Func<Vector3, Kind, ulong> probe = (dir, kind) =>
+            {
+                RaycastHit hit;
+                if (!Physics.Raycast(p.eyes.position, dir, out hit, 6f, Rust.Layers.Mask.Construction)) return 0;
+                var b = hit.GetEntity() as BuildingBlock;
+                if (b == null) return 0;
+                for (int side = 0; side < 2; side++)
+                    if (KindOf(b, side) == kind && b.HasWallpaper(side) && (kind != Kind.Wall || b.CanSeeWallpaperSocket(p, side))) return b.GetWallpaperSkin(side);
+                return 0;
+            };
+            t.Floor = probe(Vector3.down, Kind.Floor);
+            t.Ceiling = probe(Vector3.up, Kind.Ceiling);
+            var fwd = p.eyes.HeadForward(); fwd.y = 0; fwd.Normalize();
+            t.Wall = probe(p.eyes.HeadForward(), Kind.Wall);
+            for (int a = 0; a < 8 && t.Wall == 0; a++) t.Wall = probe(Quaternion.Euler(0, a * 45, 0) * fwd, Kind.Wall);
+            return t;
         }
 
         // Right panel: fixed slots from the top (preview, name, meta) and from the bottom (actions), so nothing overlaps.
@@ -1340,7 +1401,7 @@ namespace Oxide.Plugins
                     Redraw(p, grid: true); return;
 
                 case "tab":
-                    s.Tab = arg.GetString(1, "all"); s.Page = 0; s.Draft = null;
+                    s.Tab = arg.GetString(1, "all"); s.Page = 0; s.Draft = null; s.PickingFor = null;
                     if (s.Tab != "all") s.Collection = "";
                     if (s.Tab == "admin" && !admin) s.Tab = "all";
                     Redraw(p, header: true, rail: true, grid: true, side: true); return;
@@ -1387,6 +1448,13 @@ namespace Oxide.Plugins
                         if (tool == null) { Toast(p, Msg("HoldTool", p)); CloseUi(p); return; }
                         ulong id = arg.GetULong(1);
                         if (!MayUse(p, id, s.Kind)) { Toast(p, Msg("NotAllowed", p)); return; }
+                        if (s.PickingFor != null)
+                        {
+                            if (s.SetDraft == null) s.SetDraft = DraftFromTool(tool);
+                            SetSlot(s.SetDraft, s.PickingFor.Value, id);
+                            s.PickingFor = null; s.Tab = "themes"; s.Page = 0; s.Search = "";
+                            Redraw(p, header: true, rail: true, grid: true, side: true); return;
+                        }
                         SetToolSkin(tool, s.Kind, id);
                         if (id != 0) PushRecent(p, s.Kind, id);
                         Toast(p, Msg("Selected1", p, NameOf(p, id, s.Kind)));
@@ -1451,6 +1519,34 @@ namespace Oxide.Plugins
                     s.ThemeToServer = admin && arg.GetString(1) == "server";
                     Redraw(p, grid: true); return;
                 case "savetheme": SaveTheme(p, rest.Trim(), s.ThemeToServer && admin); return;
+                case "setchange":
+                    {
+                        int k = arg.GetInt(1, 1);
+                        if (k < 1 || k > 3) return;
+                        s.PickingFor = (Kind)k; s.Kind = (Kind)k; s.Tab = "all"; s.Collection = ""; s.Search = ""; s.Page = 0;
+                        if (tool != null) SetToolMode(tool, s.Kind);
+                        Redraw(p, header: true, rail: true, grid: true, side: true); return;
+                    }
+                case "pickcancel": s.PickingFor = null; s.Tab = "themes"; Redraw(p, header: true, rail: true, grid: true); return;
+                case "setfill":
+                    {
+                        string from = arg.GetString(1);
+                        if (from == "room") { s.SetDraft = ReadRoom(p); Toast(p, Msg("SetCopied", p)); }
+                        else if (from == "tool") s.SetDraft = DraftFromTool(tool);
+                        else s.SetDraft = new Theme();
+                        Redraw(p, grid: true); return;
+                    }
+                case "setname": s.SetName = rest.Trim(); return;
+                case "setsave":
+                    {
+                        if (string.IsNullOrEmpty(s.SetName)) { Toast(p, Msg("ThemeNeedsName", p)); return; }
+                        SaveTheme(p, s.SetName, s.ThemeToServer && admin, s.SetDraft ?? DraftFromTool(tool));
+                        s.SetName = "";
+                        Redraw(p, grid: true); return;
+                    }
+                case "setpaint":
+                    LoadTheme(p, Uri.UnescapeDataString(arg.GetString(1)), arg.GetULong(2));
+                    OpenBulk(p, "all"); return;
                 case "loadtheme": LoadTheme(p, Uri.UnescapeDataString(arg.GetString(1)), arg.GetULong(2)); return;
                 case "deltheme":
                     {
@@ -1537,17 +1633,18 @@ namespace Oxide.Plugins
 
         #region Themes
 
-        private void SaveTheme(BasePlayer p, string name, bool toServer)
+        private void SaveTheme(BasePlayer p, string name, bool toServer, Theme from = null)
         {
             var tool = HeldTool(p);
-            if (tool == null) { Toast(p, Msg("HoldTool", p)); return; }
+            if (from == null && tool == null) { Toast(p, Msg("HoldTool", p)); return; }
+            if (from == null) from = DraftFromTool(tool);
             name = (name ?? "").Trim();
             if (name.Length == 0) { Toast(p, Msg("ThemeNeedsName", p)); return; }
             if (name.Length > 40) name = name.Substring(0, 40);
             var list = toServer ? catalogue.Themes : Info(p.userID).Themes;
             if (!toServer && list.Count >= config.MaxThemes && !list.Any(t => t.Name == name)) { Toast(p, Msg("TooManyThemes", p, config.MaxThemes)); return; }
             list.RemoveAll(t => t.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
-            list.Add(new Theme { Name = name, Wall = tool.wallSkinID, Floor = tool.flooringSkinID, Ceiling = tool.ceilingSkinID, Owner = toServer ? 0 : p.userID });
+            list.Add(new Theme { Name = name, Wall = from.Wall, Floor = from.Floor, Ceiling = from.Ceiling, Owner = toServer ? 0 : p.userID });
             list.Sort((a, b) => string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase));
             if (toServer) catalogueDirty = true; else playersDirty = true;
             Toast(p, Msg("ThemeSaved", p, name));
@@ -2073,7 +2170,7 @@ namespace Oxide.Plugins
             return y;
         }
 
-        private void OpenBulk(BasePlayer p)
+        private void OpenBulk(BasePlayer p, string surface = null)
         {
             if (!config.Bulk.Enabled || !permission.UserHasPermission(p.UserIDString, PermBulk)) { Toast(p, Msg("NoPerm", p)); return; }
             var tool = HeldTool(p);
@@ -2082,7 +2179,7 @@ namespace Oxide.Plugins
             var b = LookedAtBlock(p);
             if (b == null || b.GetBuilding() == null) { Toast(p, Msg("LookAtBuilding", p)); return; }
             if (!CanEdit(p, b)) { Toast(p, Msg("NeedAuth", p)); return; }
-            var plan = new BulkPlan { Ref = b, Base = RoomBase(b, p), SurfaceKey = State(p).Kind.ToString().ToLower() };
+            var plan = new BulkPlan { Ref = b, Base = RoomBase(b, p), SurfaceKey = surface ?? State(p).Kind.ToString().ToLower() };
             pendingPlan[p.userID] = plan;
             if (!openUi.Contains(p.userID)) OpenUi(p);
             Recompute(p, plan);
@@ -2287,6 +2384,12 @@ namespace Oxide.Plugins
                 ["Close"] = "✕  CLOSE",
                 ["TabAll"] = "All", ["TabFavs"] = "Favourites", ["TabRecent"] = "Recent",
                 ["TabCollections"] = "Collections", ["TabThemes"] = "Room Sets",
+                ["SetNew"] = "NEW ROOM SET", ["SetNewHelp"] = "Pick a wall, floor and ceiling, name it, save it.",
+                ["SetChange"] = "CHANGE", ["SetCopyRoom"] = "COPY THIS ROOM", ["SetFromTool"] = "FROM MY TOOL", ["SetClear"] = "CLEAR",
+                ["SetNameHint"] = "Name, e.g. Kitchen (Enter)", ["SetSave"] = "SAVE",
+                ["SetSaved"] = "SAVED ROOM SETS", ["SetUse"] = "USE", ["SetPaint"] = "PAINT ROOM",
+                ["SetCopied"] = "Copied this room's wall, floor and ceiling",
+                ["Picking"] = "Pick a {0} for your room set",
                 ["GroupWallpapers"] = "WALLPAPERS", ["GroupYours"] = "YOURS", ["GroupFind"] = "FIND MORE",
                 ["TabSettings"] = "Settings", ["SettingsTitle"] = "YOUR SETTINGS (saved for you)",
                 ["ViewHelp"] = "Show wallpapers as picture tiles, or as a list with names and collections.",
@@ -2306,7 +2409,7 @@ namespace Oxide.Plugins
                 ["ThemesHelp"] = "A room set is a matching wall + floor + ceiling. Click one to load all three into your tool, then use BULK › ALL 3 to do a whole room at once.",
                 ["ThemeSaveHint"] = "Save what's in your tool now as a room set: type a name, then Enter",
                 ["ThemeMine"] = "MINE", ["ThemeServer"] = "SERVER",
-                ["NoThemes"] = "No room sets yet. Pick a wall, floor and ceiling, then save them above.",
+                ["NoThemes"] = "None yet. Fill the three slots above (COPY THIS ROOM is the quickest), name it and press SAVE.",
                 ["ThemeNeedsName"] = "Give the room set a name",
                 ["TooManyThemes"] = "You can save up to {0} room sets",
                 ["ThemeSaved"] = "Saved room set \"{0}\"",
@@ -2347,7 +2450,8 @@ namespace Oxide.Plugins
                 ["HelpCostFree"] = "<color=#8cc63f><b>COST</b></color>\nPlacing wallpaper is <b>free</b> for you on this server.",
                 ["HelpUndo"] = "<color=#8cc63f><b>UNDO</b></color>\nEvery placement, strip and bulk job can be undone: your last {0} actions for {1} minutes. Use UNDO 1 / 5 / ALL in the side panel, or /{2} undo [number|all]. Cloth is settled automatically.",
                 ["HelpBulk"] = "<color=#8cc63f><b>BULK PAINT / STRIP</b></color>\nLook at your building and press BULK. Choose PAINT or STRIP, which surfaces (ALL 3 uses the room set in your tool) and THIS LEVEL or WHOLE BUILDING. Up to {0} surfaces at a time. Outside faces are skipped.",
-                ["HelpThemes"] = "<color=#8cc63f><b>ROOM SETS</b></color>\nA matching wall + floor + ceiling. In Room Sets, type a name to save what's in your tool (up to {0}), or use /{1} set <name>. Click a set to load all three.",
+                ["HelpThemes"] = "<color=#8cc63f><b>ROOM SETS</b></color>
+A matching wall + floor + ceiling. In Room Sets, fill the three slots (COPY THIS ROOM grabs the room you stand in, or CHANGE to pick each one), name it and SAVE (up to {0}). USE loads all three into your tool; PAINT ROOM loads them and opens the bulk window. Chat: /{1} set <name> saves what is in your tool.",
                 ["HelpSubmit"] = "<color=#8cc63f><b>MY WALLPAPERS</b></color>\nAdd Steam Workshop wallpapers of your own (up to {1}): open My Wallpapers, paste a Workshop link or ID into the box and press Enter. Or use chat: /{0} add <link> [wall|floor|ceiling].",
                 ["HelpTeam"] = "Your team can use each other's too.",
                 ["HelpBinds"] = "<color=#8cc63f><b>KEY BINDS (any key, set once in F1)</b></color>\nbind q wpstudio.ui toggle   <color=#9aa0a0>open/close</color>\nbind c wpstudio.ui copy   <color=#9aa0a0>copy</color>\nbind x wpstudio.ui strip   <color=#9aa0a0>strip</color>\nbind z \"wpstudio.ui undo 1\"   <color=#9aa0a0>undo</color>\nbind v wpstudio.ui next   <color=#9aa0a0>next</color>   ·   bind n wpstudio.ui bulk   <color=#9aa0a0>bulk</color>",

@@ -61,8 +61,13 @@ The menu has a **Help** tab that explains everything using the server's actual s
 - **Auto surface:** the tool switches to wall, floor or ceiling to match what you aim at. It's a
   per-player toggle (`/wp auto`).
 - **Hotbar panel:** shows a picture of what the tool will place (`/wp hud` to hide or show it).
-- **Room Sets:** a matching wall + floor + ceiling, saved per player (`/wp set <name>`). Admins can also
-  save server room sets. Click one to load all three into the tool.
+- **Room Sets:** a matching wall + floor + ceiling.
+  - **Making one:** fill three slots. COPY THIS ROOM grabs the room you're standing in, CHANGE picks
+    each slot from the wallpaper list, and FROM MY TOOL uses what's loaded. Then name it and press SAVE.
+  - **Using one:** USE loads all three into the tool. PAINT ROOM loads them and opens the bulk window
+    on ALL 3.
+  - Sets are saved per player (`/wp set <name>` saves the tool's current picks). Admins can also save
+    server sets for everyone.
 - **Bulk** (`/wp bulk`):
   - Choose PAINT or STRIP, WALLS / FLOORS / CEILINGS / ALL 3, and THIS LEVEL or WHOLE BUILDING.
   - It shows the count and the cost or refund first, and runs in small batches so the server doesn't

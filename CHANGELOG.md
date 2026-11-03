@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.9.0
+- Room Sets rebuilt as a builder: three slots (wall, floor, ceiling) with CHANGE, plus COPY THIS ROOM,
+  FROM MY TOOL and CLEAR. Name it and SAVE.
+- Each saved set has USE (load into the tool) and PAINT ROOM (load and open the bulk window on ALL 3).
+
 ## 1.8.1
 - Workshop browser: clearer buttons, **ADD FOR EVERYONE** (admins) and **ADD JUST FOR ME**. The surface
   (wall/floor/ceiling) now comes from the item's own Workshop tag and is shown above the buttons.
