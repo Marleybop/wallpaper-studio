@@ -16,7 +16,7 @@ using HarmonyLib;
 
 namespace Oxide.Plugins
 {
-    [Info("Wallpaper Studio", "Marleybop", "1.9.0")]
+    [Info("Wallpaper Studio", "Marleybop", "1.9.1")]
     [Description("Fast wallpaper picker: search, collections, favourites, themes, list/grid views, eyedropper, bulk paint/strip with undo, and player-submitted Workshop wallpapers.")]
     public class WallpaperStudio : RustPlugin
     {
@@ -2450,8 +2450,7 @@ namespace Oxide.Plugins
                 ["HelpCostFree"] = "<color=#8cc63f><b>COST</b></color>\nPlacing wallpaper is <b>free</b> for you on this server.",
                 ["HelpUndo"] = "<color=#8cc63f><b>UNDO</b></color>\nEvery placement, strip and bulk job can be undone: your last {0} actions for {1} minutes. Use UNDO 1 / 5 / ALL in the side panel, or /{2} undo [number|all]. Cloth is settled automatically.",
                 ["HelpBulk"] = "<color=#8cc63f><b>BULK PAINT / STRIP</b></color>\nLook at your building and press BULK. Choose PAINT or STRIP, which surfaces (ALL 3 uses the room set in your tool) and THIS LEVEL or WHOLE BUILDING. Up to {0} surfaces at a time. Outside faces are skipped.",
-                ["HelpThemes"] = "<color=#8cc63f><b>ROOM SETS</b></color>
-A matching wall + floor + ceiling. In Room Sets, fill the three slots (COPY THIS ROOM grabs the room you stand in, or CHANGE to pick each one), name it and SAVE (up to {0}). USE loads all three into your tool; PAINT ROOM loads them and opens the bulk window. Chat: /{1} set <name> saves what is in your tool.",
+                ["HelpThemes"] = "<color=#8cc63f><b>ROOM SETS</b></color>\nA matching wall + floor + ceiling. In Room Sets, fill the three slots (COPY THIS ROOM grabs the room you stand in, or CHANGE to pick each one), name it and SAVE (up to {0}). USE loads all three into your tool; PAINT ROOM loads them and opens the bulk window. Chat: /{1} set <name> saves what is in your tool.",
                 ["HelpSubmit"] = "<color=#8cc63f><b>MY WALLPAPERS</b></color>\nAdd Steam Workshop wallpapers of your own (up to {1}): open My Wallpapers, paste a Workshop link or ID into the box and press Enter. Or use chat: /{0} add <link> [wall|floor|ceiling].",
                 ["HelpTeam"] = "Your team can use each other's too.",
                 ["HelpBinds"] = "<color=#8cc63f><b>KEY BINDS (any key, set once in F1)</b></color>\nbind q wpstudio.ui toggle   <color=#9aa0a0>open/close</color>\nbind c wpstudio.ui copy   <color=#9aa0a0>copy</color>\nbind x wpstudio.ui strip   <color=#9aa0a0>strip</color>\nbind z \"wpstudio.ui undo 1\"   <color=#9aa0a0>undo</color>\nbind v wpstudio.ui next   <color=#9aa0a0>next</color>   ·   bind n wpstudio.ui bulk   <color=#9aa0a0>bulk</color>",

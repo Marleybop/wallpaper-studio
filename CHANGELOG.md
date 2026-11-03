@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.9.1
+- Fix: 1.9.0 did not compile (a line break inside the Room Sets help text). Use 1.9.1.
+
 ## 1.9.0
 - Room Sets rebuilt as a builder: three slots (wall, floor, ceiling) with CHANGE, plus COPY THIS ROOM,
   FROM MY TOOL and CLEAR. Name it and SAVE.
