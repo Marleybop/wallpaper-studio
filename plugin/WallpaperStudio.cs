@@ -16,7 +16,7 @@ using HarmonyLib;
 
 namespace Oxide.Plugins
 {
-    [Info("Wallpaper Studio", "Marleybop", "1.11.1")]
+    [Info("Wallpaper Studio", "Marleybop", "1.12.0")]
     [Description("Fast wallpaper picker: search, collections, favourites, themes, list/grid views, eyedropper, bulk paint/strip with undo, and player-submitted Workshop wallpapers.")]
     public class WallpaperStudio : RustPlugin
     {
@@ -42,6 +42,7 @@ namespace Oxide.Plugins
         private const string UiHud = "WS.Hud";
 
         private static WallpaperStudio Instance;
+        private static bool forceInsideCheck;   // run the game's inside-only check even when outside faces are allowed
 
         #endregion
 
@@ -474,6 +475,10 @@ namespace Oxide.Plugins
                     if (Instance.ComboPressed(input, hk.Copy)) Instance.Eyedropper(player);
                     else if (Instance.ComboPressed(input, hk.Strip)) Instance.StripOne(player);
                     else Instance.Cycle(player, false);
+                }
+                else if (Instance.config.AllowOutside && input.WasJustPressed(BUTTON.FIRE_PRIMARY))
+                {
+                    Instance.OutsideClick(player);
                 }
                 else if (UnityEngine.Time.realtimeSinceStartup >= nextAim)
                 {
@@ -1387,7 +1392,7 @@ namespace Oxide.Plugins
             Panel(c, UiFrame, UiModal, "0 0 0 0.78", "0 0", "1 1");
             Button(c, UiModal, $"{Cmd} noop", "0 0 0 0", "0 0", "1 1");
             string box = CuiHelper.GetGuid();
-            Panel(c, UiModal, box, C.Panel, "0.5 0.5", "0.5 0.5", "-300 -170", "300 170");
+            Panel(c, UiModal, box, C.Panel, "0.5 0.5", "0.5 0.5", "-300 -190", "300 190");
             Label(c, box, Msg("BulkTitle", p), 18, C.Accent, TextAnchor.MiddleCenter, "0 1", "1 1", "0 -44", "0 -10", bold: true);
 
             Label(c, box, Msg("BulkAction", p), 12, C.TextDim, TextAnchor.MiddleLeft, "0 1", "0 1", "24 -82", "130 -56");
@@ -1395,6 +1400,8 @@ namespace Oxide.Plugins
             Label(c, box, Msg("BulkSurface", p), 12, C.TextDim, TextAnchor.MiddleLeft, "0 1", "0 1", "24 -118", "130 -92");
             Chips(c, box, "0 1", 130, -118, -90, 104, new[] { "wall", "floor", "ceiling", "all" }.Select(k => new KeyValuePair<string, string>(k, Msg("Surf_" + k, p))), plan.SurfaceKey, $"{Cmd} bulkset surface");
             Label(c, box, Msg("BulkScope", p), 12, C.TextDim, TextAnchor.MiddleLeft, "0 1", "0 1", "24 -154", "130 -128");
+            if (config.AllowOutside)
+                Button(c, box, $"{Cmd} bulkset outside x", plan.IncludeOutside ? C.AccentDim : C.PanelHi, "0 1", "0 1", (plan.IncludeOutside ? "☑  " : "☐  ") + Msg("IncludeOutside", p), 12, plan.IncludeOutside ? C.Text : C.TextDim, "130 -190", "416 -162");
             Chips(c, box, "0 1", 130, -154, -126, 140, new[] { new KeyValuePair<string, string>("level", Msg("ScopeLevel", p)), new KeyValuePair<string, string>("building", Msg("ScopeBuilding", p)) }, plan.Scope, $"{Cmd} bulkset scope");
 
             string summary;
@@ -1406,7 +1413,7 @@ namespace Oxide.Plugins
                 string cost = plan.Free ? Msg("Free", p) : $"{plan.NewSurfaces * plan.CostAmount} {plan.CostName}";
                 summary = Msg("PaintBody", p, what, plan.Targets.Count, plan.NewSurfaces, cost);
             }
-            Label(c, box, summary, 13, C.Text, TextAnchor.MiddleCenter, "0 0", "1 1", "20 70", "-20 -164");
+            Label(c, box, summary, 13, C.Text, TextAnchor.MiddleCenter, "0 0", "1 1", "20 70", "-20 -196");
             bool any = plan.Targets.Count > 0;
             Button(c, box, any ? $"{Cmd} bulkgo" : $"{Cmd} noop", any ? C.Accent : C.PanelHi, "0.5 0", "0.5 0", plan.Action == "strip" ? Msg("GoStrip", p) : Msg("GoPaint", p), 14, any ? C.OnAccent : C.TextFaint, "-180 18", "-10 56");
             Button(c, box, $"{Cmd} bulkcancel", C.PanelHi, "0.5 0", "0.5 0", Msg("Cancel", p), 14, C.Text, "10 18", "180 56");
@@ -2252,6 +2259,38 @@ namespace Oxide.Plugins
             Redraw(p, side: true);
         }
 
+        // Single-click placement on faces the game's own tool refuses (outside faces), when the server allows them.
+        // Wait a moment first: if the game placed it itself (an inside face), do nothing.
+        private void OutsideClick(BasePlayer p)
+        {
+            var tool = HeldTool(p);
+            var b = tool != null ? LookedAtBlock(p) : null;
+            if (b == null) return;
+            int side = FacingSide(b, p, false);
+            var kind = side >= 0 ? KindOf(b, side) : null;
+            if (kind == null || kind.Value != ToolKind(tool) || !CanEdit(p, b)) return;
+            ulong skin = ToolSkin(tool, kind.Value);
+            timer.Once(0.25f, () =>
+            {
+                if (b == null || b.IsDestroyed || p == null || !p.IsConnected) return;
+                if (b.HasWallpaper(side) && b.GetWallpaperSkin(side) == skin) return;   // the game handled it
+                int item; string costName;
+                int amount = Price(out item, out costName);
+                bool wasEmpty = !b.HasWallpaper(side);
+                bool pay = wasEmpty && !IsFree(p) && !(p.IsInCreativeMode && ConVar.Creative.freeBuild);
+                if (pay && p.inventory.GetAmount(item) < amount) { Toast(p, Msg("Broke", p, amount, costName)); return; }
+                var change = new Change { Block = b.net.ID, Side = side, Old = b.GetWallpaperSkin(side), OldRot = b.GetWallpaperRotation(side), WasEmpty = wasEmpty, New = skin };
+                b.SetWallpaper(skin, side, wasEmpty ? 0f : change.OldRot);
+                if (!b.HasWallpaper(side)) return;
+                if (pay) { p.inventory.Take(null, item, amount); p.Command("note.inv", item, -amount); }
+                Effect.server.Run("assets/prefabs/wallpaper/effects/place.prefab", b.transform.position);
+                var r = new UndoRecord { At = UnityEngine.Time.realtimeSinceStartup, CostItem = item, Refund = pay ? amount : 0 };
+                r.Changes.Add(change);
+                PushHistory(p, r);
+                Redraw(p, side: true);
+            });
+        }
+
         private static void GiveBack(BasePlayer p, int itemId, int amount)
         {
             if (amount <= 0) return;
@@ -2270,7 +2309,7 @@ namespace Oxide.Plugins
             public List<Kind> Kinds = new List<Kind>();
             public Dictionary<Kind, ulong> Skins = new Dictionary<Kind, ulong>();
             public List<Target> Targets = new List<Target>();
-            public int NewSurfaces, CostItem, CostAmount; public string CostName; public bool Free;
+            public int NewSurfaces, CostItem, CostAmount; public string CostName; public bool Free; public bool IncludeOutside;
         }
 
         private class Change { public NetworkableId Block; public int Side; public ulong Old; public float OldRot; public bool WasEmpty; public ulong New; public bool Strip; }
@@ -2373,6 +2412,7 @@ namespace Oxide.Plugins
                 case "action": if (value == "paint" || value == "strip") plan.Action = value; break;
                 case "surface": if (new[] { "wall", "floor", "ceiling", "all" }.Contains(value)) plan.SurfaceKey = value; break;
                 case "scope": if (value == "level" || value == "building") plan.Scope = value; break;
+                case "outside": plan.IncludeOutside = !plan.IncludeOutside; break;
             }
             Recompute(p, plan);
         }
@@ -2451,7 +2491,7 @@ namespace Oxide.Plugins
                         if (change.WasEmpty && !plan.Free && p.inventory.GetAmount(plan.CostItem) < plan.CostAmount) { broke = true; index = plan.Targets.Count; break; }
                         change.New = plan.Skins[t.Kind];
                         b.SetWallpaper(change.New, t.Side, change.WasEmpty ? 0f : change.OldRot);
-                        if (!config.AllowOutside) b.CheckWallpaper();      // the game removes it again if this face is outside
+                        if (!config.AllowOutside || !plan.IncludeOutside) { forceInsideCheck = true; b.CheckWallpaper(); forceInsideCheck = false; }   // the game removes it again if this face is outside
                         if (!b.HasWallpaper(t.Side))
                         {
                             outside++;
@@ -2530,7 +2570,7 @@ namespace Oxide.Plugins
         internal static class CheckWallpaperPatch
         {
             [HarmonyPrefix]
-            internal static bool Prefix() => Instance == null || !Instance.config.AllowOutside;
+            internal static bool Prefix() => Instance == null || !Instance.config.AllowOutside || forceInsideCheck;
         }
 
         #endregion
@@ -2602,7 +2642,8 @@ namespace Oxide.Plugins
                 ["SrvTitle"] = "SERVER SETTINGS (apply to everyone, saved straight away)",
                 ["SrvMature"] = "Allow mature (adult) wallpapers",
                 ["SrvFree"] = "Free for everyone (no cloth cost)",
-                ["SrvOutside"] = "Allow wallpaper on outside faces (via BULK paint)",
+                ["SrvOutside"] = "Allow wallpaper on outside faces (click them, or tick it in BULK)",
+                ["IncludeOutside"] = "INCLUDE OUTSIDE FACES",
                 ["SrvHotkeys"] = "Hotkeys while holding the tool (R, Shift+R, Shift+E)",
                 ["SrvUpdCheck"] = "Check GitHub for plugin updates",
                 ["SrvUpdInstall"] = "Install plugin updates automatically",

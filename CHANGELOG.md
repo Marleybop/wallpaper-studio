@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.12.0
+- Outside faces (when allowed): click them with the tool to place, like inside faces; it costs cloth
+  and goes into undo history as normal.
+- BULK window: INCLUDE OUTSIDE FACES checkbox (unticked by default).
+
 ## 1.11.1
 - SERVER SETTINGS: switch for wallpaper on outside faces.
 
