@@ -139,6 +139,17 @@ With **Auto update** on, the plugin checks for a new release every 6 hours, inst
 The previous version is kept in `oxide/data/WallpaperStudio/backups/`. To go back, copy that file over
 `oxide/plugins/WallpaperStudio.cs`.
 
+### Paid store wallpapers
+Wallpapers sold in the Rust item store only work for players who own them, the same as with the
+game's own tool. Players who don't own one won't see it in the menu or the browser, can't add it and
+can't copy it off someone's wall. A player who owns one can add it to **My Wallpapers**. Nobody can
+add one to the server list for everyone, admins included.
+
+Everything else on the Steam Workshop works for everyone.
+
+The list of store wallpapers loads from Steam a few seconds after the server starts. Until then, the
+menu stays empty and adding wallpapers is refused.
+
 ### Mature content
 Steam marks some Workshop items as mature (nudity or sexual content). Most players' games won't show
 them, even if your server allows them. With **Allow mature** off (the default), they're hidden from

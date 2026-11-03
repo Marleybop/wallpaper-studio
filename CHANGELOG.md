@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.13.2
+- Paid wallpapers from the Rust item store are blocked unless the player owns them, just like the
+  game's own wallpaper tool. They're refused when added (Admin tab, `wpstudio.add`, `wpstudio.importlist`,
+  Workshop browser, My Wallpapers), hidden from menus and the browser, and can't be copied off another
+  player's wall. Owners can still add them to My Wallpapers, but never to the server list for everyone.
+- The Steam API key is cleaned on load, so a pasted space or line break no longer makes Steam reject it.
+
 ## 1.13.1
 - Workshop browser no longer lists items of the old "Wallpaper" type, which no longer load in game
   (existing configs are cleaned automatically).

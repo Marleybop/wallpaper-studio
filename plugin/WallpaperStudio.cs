@@ -16,7 +16,7 @@ using HarmonyLib;
 
 namespace Oxide.Plugins
 {
-    [Info("Wallpaper Studio", "Marleybop", "1.13.1")]
+    [Info("Wallpaper Studio", "Marleybop", "1.13.2")]
     [Description("Fast wallpaper picker: search, collections, favourites, themes, list/grid views, eyedropper, bulk paint/strip with undo, and player-submitted Workshop wallpapers.")]
     public class WallpaperStudio : RustPlugin
     {
@@ -175,6 +175,8 @@ namespace Oxide.Plugins
                 if (config == null) throw new Exception("empty");
                 // the old plain "Wallpaper" item type no longer loads in game, so never search for it
                 foreach (var list in config.Browser.Tags.Values) list.RemoveAll(t => t == "Wallpaper");
+                // a pasted key often carries a stray space/newline, which Steam rejects with 403; keys are plain hex
+                config.Browser.ApiKey = new string((config.Browser.ApiKey ?? "").Where(char.IsLetterOrDigit).ToArray());
             }
             catch (Exception e)
             {
@@ -337,6 +339,7 @@ namespace Oxide.Plugins
             timer.Every(30f, () => SaveData());
             timer.Once(20f, () => { if (config.Updates.Check) CheckForUpdate(config.Updates.AutoInstall, null); });
             timer.Every(Mathf.Max(1f, config.Updates.Hours) * 3600f, () => { if (config.Updates.Check) CheckForUpdate(config.Updates.AutoInstall, null); });
+            BuildStoreList();
             if (catalogue.Items.Count == 0)
                 Puts("Catalogue is empty. Admins: open the menu and use Admin > Add, or 'wpstudio.importlist' to import a list of IDs.");
         }
@@ -720,7 +723,7 @@ namespace Oxide.Plugins
                     if (!string.IsNullOrEmpty(s.Collection)) src = src.Where(w => w.Collection.Equals(s.Collection, StringComparison.OrdinalIgnoreCase));
                     break;
             }
-            return src.Where(w => CanSeeCollection(p, w.Collection) && Matches(w, s.Search)).GroupBy(w => w.Id).Select(g => g.First()).ToList();
+            return src.Where(w => storeReady && OwnsStore(p, w.Id) && CanSeeCollection(p, w.Collection) && Matches(w, s.Search)).GroupBy(w => w.Id).Select(g => g.First()).ToList();
         }
 
         private string NameOf(BasePlayer p, ulong id, Kind kind)
@@ -732,9 +735,51 @@ namespace Oxide.Plugins
             return mine != null ? mine.Name : id.ToString();
         }
 
+        // ---- store wallpapers: ones Facepunch sells (Steam item store / accepted Workshop items). The vanilla tool only
+        // applies them if the player owns them; this plugin applies IDs directly, so it must refuse them itself.
+        // Maps the wallpaper ID a wall stores -> the Steam inventory definition that grants it.
+        private readonly Dictionary<ulong, int> storeSkins = new Dictionary<ulong, int>();
+        private bool storeReady;
+
+        private void BuildStoreList()
+        {
+            storeSkins.Clear();
+            bool steamLoaded = true;
+            foreach (WallpaperSettings.Category cat in new[] { WallpaperSettings.Category.Wall, WallpaperSettings.Category.Floor, WallpaperSettings.Category.Ceiling })
+            {
+                var def = WallpaperSettings.GetItemDefForCategory(cat);
+                if (def == null) { steamLoaded = false; continue; }
+                if (def.skins != null) foreach (var s in def.skins) if (s.id != 0) storeSkins[(ulong)s.id] = s.id;
+                var steam = def.skins2;
+                if (steam == null) { steamLoaded = false; continue; }
+                foreach (var x in steam)
+                {
+                    if (x == null) continue;
+                    if (x.WorkshopDownload != 0) storeSkins[x.WorkshopDownload] = x.DefinitionId;
+                    if (x.WorkshopId != 0) storeSkins[x.WorkshopId] = x.DefinitionId;
+                }
+            }
+            if (!steamLoaded) { timer.Once(30f, BuildStoreList); return; }   // Steam's item list loads after startup; try again
+            storeReady = true;
+            int listed = catalogue.Items.Count(w => storeSkins.ContainsKey(w.Id));
+            Puts($"Blocking {storeSkins.Count} store wallpaper IDs (players can still use the ones they own)." + (listed > 0 ? $" {listed} catalogue entr{(listed == 1 ? "y is a store item" : "ies are store items")} and stay hidden." : ""));
+        }
+
+        private bool IsStore(ulong id) => id != 0 && storeSkins.ContainsKey(id);
+
+        // A store wallpaper is fine only for a player who owns it, exactly as the game's own tool checks it.
+        private bool OwnsStore(BasePlayer p, ulong id)
+        {
+            int def;
+            if (!storeSkins.TryGetValue(id, out def)) return true;
+            try { return p != null && p.blueprints != null && p.blueprints.CheckSkinOwnership(def, p); }
+            catch { return false; }
+        }
+
         private bool MayUse(BasePlayer p, ulong id, Kind kind)
         {
             if (id == 0) return true;
+            if (!storeReady || !OwnsStore(p, id)) return false;   // fail closed until the store list has loaded
             Wallpaper w;
             if (byId.TryGetValue(id, out w)) return w.Kind == kind && CanSeeCollection(p, w.Collection);
             return Personal(p, kind, false).Any(x => x.Id == id);
@@ -1559,8 +1604,11 @@ namespace Oxide.Plugins
                     {
                         ulong id = arg.GetULong(1);
                         var r = BrowseItem(id);
+                        if (!storeReady || !OwnsStore(p, id)) { Toast(p, Msg("StoreBlocked", p)); return; }
                         if (arg.GetString(2) == "server" && admin)
                         {
+                            // the server list is for everyone, so a store item can't go there even if this admin owns it
+                            if (IsStore(id)) { Toast(p, Msg("StoreServerBlocked", p)); return; }
                             if (byId.ContainsKey(id)) { Toast(p, Msg("AlreadyListed", p)); return; }
                             var kind = KindFromTags(r, s.Kind);
                             var w = new Wallpaper { Id = id, Name = r != null ? r.Title : id.ToString(), Kind = kind, Collection = s.BrowseCollection, AddedBy = p.userID };
@@ -1765,9 +1813,11 @@ namespace Oxide.Plugins
             // bulk paste: several IDs separated by spaces/commas all get the same collection and kind
             var ids = WorkshopId.Matches(d.Id).Cast<Match>().Select(m => ulong.Parse(m.Groups[1].Value)).Distinct().ToList();
             if (ids.Count == 0) { Toast(p, Msg("BadId", p)); return; }
-            int added = 0;
+            if (!storeReady) { Toast(p, Msg("StoreBlocked", p)); return; }
+            int added = 0, store = 0;
             foreach (var id in ids)
             {
+                if (IsStore(id)) { store++; continue; }
                 if (byId.ContainsKey(id)) continue;
                 var w = new Wallpaper { Id = id, Name = ids.Count == 1 && !string.IsNullOrEmpty(d.Name) ? d.Name : id.ToString(), Kind = d.Kind, Collection = d.Collection, Tags = tags, AddedBy = p.userID };
                 catalogue.Items.Add(w);
@@ -1780,7 +1830,7 @@ namespace Oxide.Plugins
                 });
             }
             catalogueDirty = true; RebuildIndex();
-            Toast(p, Msg("AddedN", p, added, ids.Count - added));
+            Toast(p, Msg("AddedN", p, added, ids.Count - added - store) + (store > 0 ? " " + Msg("StoreSkippedN", p, store) : ""));
             s.Draft = new AdminDraft { Kind = d.Kind, Collection = d.Collection };
             Redraw(p, grid: true);
         }
@@ -1797,6 +1847,8 @@ namespace Oxide.Plugins
             Kind k = Kind.Wall;
             if (arg.Args.Length > 1) Enum.TryParse(arg.GetString(1), true, out k);
             string collection = arg.Args.Length > 2 ? string.Join(" ", arg.Args.Skip(2)) : "";
+            if (!storeReady) { arg.ReplyWith("The store wallpaper list hasn't loaded yet; try again in a minute"); return; }
+            if (IsStore(id)) { arg.ReplyWith("That's a paid store wallpaper, so it can't be added"); return; }
             if (byId.ContainsKey(id)) { arg.ReplyWith("Already listed"); return; }
             var w = new Wallpaper { Id = id, Name = id.ToString(), Kind = k, Collection = collection, AddedBy = p != null ? p.userID : 0 };
             catalogue.Items.Add(w); catalogueDirty = true; RebuildIndex();
@@ -1816,9 +1868,11 @@ namespace Oxide.Plugins
             List<Wallpaper> list;
             try { list = Interface.Oxide.DataFileSystem.ReadObject<List<Wallpaper>>($"{Name}/{file}"); }
             catch (Exception e) { arg.ReplyWith($"Could not read {file}.json: {e.Message}"); return; }
-            int added = 0, skipped = 0;
+            if (!storeReady) { arg.ReplyWith("The store wallpaper list hasn't loaded yet; try again in a minute"); return; }
+            int added = 0, skipped = 0, store = 0;
             foreach (var w in list ?? new List<Wallpaper>())
             {
+                if (w != null && IsStore(w.Id)) { store++; continue; }
                 if (w == null || w.Id == 0 || byId.ContainsKey(w.Id) || !Enum.IsDefined(typeof(Kind), w.Kind)) { skipped++; continue; }
                 if (string.IsNullOrEmpty(w.Name)) w.Name = w.Id.ToString();
                 if (w.Tags == null) w.Tags = new List<string>();
@@ -1827,7 +1881,7 @@ namespace Oxide.Plugins
                 added++;
             }
             catalogueDirty = true; RebuildIndex(); SaveData();
-            arg.ReplyWith($"Imported {added} wallpapers ({skipped} skipped: duplicates or invalid).");
+            arg.ReplyWith($"Imported {added} wallpapers ({skipped} skipped: duplicates or invalid; {store} refused: paid store wallpapers).");
         }
 
         // ---- updates: latest vX.Y.Z tag on GitHub -> download that tag's plugin file -> verify -> back up -> replace (Oxide reloads it)
@@ -2036,14 +2090,16 @@ namespace Oxide.Plugins
             var page = GetBrowsePage(s.Kind, s.Search, s.BrowseSort, s.BrowsePage);
             if (page.Loading) { Label(c, UiGrid, Msg("BrowseLoading", p), 15, C.TextDim, TextAnchor.MiddleCenter, "0 0", "1 1"); return; }
             if (!string.IsNullOrEmpty(page.Error)) { Label(c, UiGrid, page.Error, 14, C.Danger, TextAnchor.MiddleCenter, "0 0", "1 1"); return; }
-            if (page.Items.Count == 0) { Label(c, UiGrid, Msg("BrowseNone", p), 15, C.TextDim, TextAnchor.MiddleCenter, "0 0", "1 1"); return; }
+            // results are shared by everyone, so drop store items per player: shown only to players who own them
+            var items = page.Items.Where(x => storeReady && OwnsStore(p, x.Id)).ToList();
+            if (items.Count == 0) { Label(c, UiGrid, Msg("BrowseNone", p), 15, C.TextDim, TextAnchor.MiddleCenter, "0 0", "1 1"); return; }
 
             int cols = 4, rows = (Mathf.Clamp(config.Browser.PerPage, 4, 50) + 3) / 4;
             float gap = 0.012f, top = 0.94f, bottom = 0.06f;
             float cw = (1f - gap * (cols - 1)) / cols, ch = (top - bottom - gap * (rows - 1)) / rows;
-            for (int i = 0; i < page.Items.Count && i < cols * rows; i++)
+            for (int i = 0; i < items.Count && i < cols * rows; i++)
             {
-                var r = page.Items[i];
+                var r = items[i];
                 int col = i % cols, row = i / cols;
                 float x0 = col * (cw + gap), y1 = top - row * (ch + gap);
                 bool sel = r.Id == s.BrowseSel;
@@ -2070,7 +2126,7 @@ namespace Oxide.Plugins
         private void BuildBrowseSide(CuiElementContainer c, BasePlayer p, UiState s)
         {
             var r = BrowseItem(s.BrowseSel);
-            if (r == null) return;
+            if (r == null || !storeReady || !OwnsStore(p, r.Id)) return;
             Label(c, UiSide, Msg("BrowseSelected", p).ToUpper(), 12, C.TextDim, TextAnchor.MiddleLeft, "0 1", "1 1", "16 -32", "-16 -8", bold: true);
             string box = CuiHelper.GetGuid();
             Panel(c, UiSide, box, C.Tile, "0 1", "1 1", "16 -300", "-16 -38");
@@ -2156,6 +2212,7 @@ namespace Oxide.Plugins
             if (!config.Submissions.Enabled || !permission.UserHasPermission(p.UserIDString, PermSubmit)) { Toast(p, Msg("NoPerm", p)); return; }
             ulong id;
             if (!ParseId(text, out id)) { Toast(p, Msg("BadId", p)); return; }
+            if (!storeReady || !OwnsStore(p, id)) { Toast(p, Msg("StoreBlocked", p)); return; }   // store items only if they own it
             float now = UnityEngine.Time.realtimeSinceStartup, last;
             if (addCooldown.TryGetValue(p.userID, out last) && now - last < 3f) { Toast(p, Msg("SlowDown", p)); return; }
             addCooldown[p.userID] = now;
@@ -2228,6 +2285,8 @@ namespace Oxide.Plugins
             var kind = side >= 0 ? KindOf(b, side) : null;
             if (b == null || side < 0 || !b.HasWallpaper(side) || kind == null) { Toast(p, Msg("CopyNothing", p)); return; }
             ulong id = b.GetWallpaperSkin(side);
+            // someone else's wall may carry a store wallpaper they own; copying it must not hand it to this player
+            if (id != 0 && (!storeReady || !OwnsStore(p, id))) { Toast(p, Msg("StoreBlocked", p)); return; }
             SetToolMode(tool, kind.Value);
             SetToolSkin(tool, kind.Value, id);
             if (id != 0) PushRecent(p, kind.Value, id);
@@ -2648,6 +2707,9 @@ namespace Oxide.Plugins
                 ["NotRustBadge"] = "NOT A RUST ITEM", ["MatureBadge"] = "MATURE (FILTERED)",
                 ["MatureWarn"] = "Steam flags that wallpaper as mature content, so most players' games won't show it",
                 ["MatureBlocked"] = "That wallpaper is flagged as mature content, which this server doesn't allow",
+                ["StoreBlocked"] = "That's a paid wallpaper from the Rust item store, and you don't own it.",
+                ["StoreServerBlocked"] = "That's a paid store wallpaper, so it can't go in the server list for everyone. Use Just for Me to add it to your own wallpapers.",
+                ["StoreSkippedN"] ="{0} paid store wallpaper(s) refused.",
                 ["MatureTag"] = "MATURE",
                 ["SlowDown"] = "Give it a few seconds between adds",
                 ["RemoveShort"] = "REMOVE", ["DeleteShort"] = "DELETE",
