@@ -115,10 +115,12 @@ namespace Oxide.Plugins
         {
             [JsonProperty("Enabled")] public bool Enabled = true;
             [JsonProperty("Steam Web API key (https://steamcommunity.com/dev/apikey)")] public string ApiKey = "";
-            [JsonProperty("Workshop tags per surface (all must match; empty = search text only)")]
+            [JsonProperty("Workshop tags per surface (an item matches if it has any of them; empty = search text only)")]
             public Dictionary<string, List<string>> Tags = new Dictionary<string, List<string>>
             {
-                { "Wall", new List<string>() }, { "Floor", new List<string>() }, { "Ceiling", new List<string>() }
+                { "Wall", new List<string> { "Wallpaper Wall", "Wallpaper" } },
+                { "Floor", new List<string> { "Wallpaper Flooring" } },
+                { "Ceiling", new List<string> { "Wallpaper Ceiling" } }
             };
             [JsonProperty("Words added to every search when no tags are set")] public string DefaultSearch = "wallpaper";
             [JsonProperty("Results per page")] public int PerPage = 12;
@@ -1734,6 +1736,7 @@ namespace Oxide.Plugins
             List<string> tags;
             if (!config.Browser.Tags.TryGetValue(kind.ToString(), out tags)) tags = new List<string>();
             for (int i = 0; i < tags.Count; i++) args.Add($"requiredtags[{i}]=" + Uri.EscapeDataString(tags[i]));
+            if (tags.Count > 1) args.Add("match_all_tags=false");
             string text = (search ?? "").Trim();
             if (tags.Count == 0 && !string.IsNullOrEmpty(config.Browser.DefaultSearch)) text = (config.Browser.DefaultSearch + " " + text).Trim();
             if (text.Length > 0) { args.Add("search_text=" + Uri.EscapeDataString(text)); args.Add("query_type=" + (sort == "trend" ? 12 : QueryType(sort))); }
