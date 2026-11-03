@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.12.2
+- Fix: text box placeholders are created before their input field (removes the "Unable to find
+  placeholder panel" client message).
+
 ## 1.12.1
 - Clearer tile controls: a bigger star on a dark backing, red REMOVE / DELETE buttons instead of a small ✕,
   and solid ADDED / MATURE badges in the Workshop browser.

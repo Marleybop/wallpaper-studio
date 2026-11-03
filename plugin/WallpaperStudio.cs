@@ -16,7 +16,7 @@ using HarmonyLib;
 
 namespace Oxide.Plugins
 {
-    [Info("Wallpaper Studio", "Marleybop", "1.12.1")]
+    [Info("Wallpaper Studio", "Marleybop", "1.12.2")]
     [Description("Fast wallpaper picker: search, collections, favourites, themes, list/grid views, eyedropper, bulk paint/strip with undo, and player-submitted Workshop wallpapers.")]
     public class WallpaperStudio : RustPlugin
     {
@@ -843,6 +843,17 @@ namespace Oxide.Plugins
             var bg = CuiHelper.GetGuid();
             Panel(c, parent, bg, "0.07 0.07 0.08 1", min, max, offMin, offMax);
             string field = CuiHelper.GetGuid(), ph = string.IsNullOrEmpty(hint) ? null : CuiHelper.GetGuid();
+            // the placeholder must exist before the input field that points at it
+            if (ph != null)
+                c.Add(new CuiElement
+                {
+                    Name = ph, Parent = bg,
+                    Components =
+                    {
+                        new CuiTextComponent { Text = hint, FontSize = size, Color = C.TextFaint, Align = TextAnchor.MiddleLeft, Font = "robotocondensed-regular.ttf", PlaceholderParentId = field },
+                        new CuiRectTransformComponent { AnchorMin = "0 0", AnchorMax = "1 1", OffsetMin = "10 0", OffsetMax = "-8 0" }
+                    }
+                });
             c.Add(new CuiElement
             {
                 Name = field, Parent = bg,
@@ -852,16 +863,6 @@ namespace Oxide.Plugins
                     new CuiRectTransformComponent { AnchorMin = "0 0", AnchorMax = "1 1", OffsetMin = "10 0", OffsetMax = "-8 0" }
                 }
             });
-            if (ph != null)
-                c.Add(new CuiElement
-                {
-                    Name = ph, Parent = field,
-                    Components =
-                    {
-                        new CuiTextComponent { Text = hint, FontSize = size, Color = C.TextFaint, Align = TextAnchor.MiddleLeft, Font = "robotocondensed-regular.ttf", PlaceholderParentId = field },
-                        new CuiRectTransformComponent { AnchorMin = "0 0", AnchorMax = "1 1" }
-                    }
-                });
         }
 
         private static string Trim(string s, int max) => s.Length > max ? s.Substring(0, max - 1) + "…" : s;
