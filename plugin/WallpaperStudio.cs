@@ -16,7 +16,7 @@ using HarmonyLib;
 
 namespace Oxide.Plugins
 {
-    [Info("Wallpaper Studio", "Marleybop", "1.8.0")]
+    [Info("Wallpaper Studio", "Marleybop", "1.8.1")]
     [Description("Fast wallpaper picker: search, collections, favourites, themes, list/grid views, eyedropper, bulk paint/strip with undo, and player-submitted Workshop wallpapers.")]
     public class WallpaperStudio : RustPlugin
     {
@@ -1436,13 +1436,14 @@ namespace Oxide.Plugins
                         if (arg.GetString(2) == "server" && admin)
                         {
                             if (byId.ContainsKey(id)) { Toast(p, Msg("AlreadyListed", p)); return; }
-                            var w = new Wallpaper { Id = id, Name = r != null ? r.Title : id.ToString(), Kind = s.Kind, Collection = s.BrowseCollection, AddedBy = p.userID };
+                            var kind = KindFromTags(r, s.Kind);
+                            var w = new Wallpaper { Id = id, Name = r != null ? r.Title : id.ToString(), Kind = kind, Collection = s.BrowseCollection, AddedBy = p.userID };
                             catalogue.Items.Add(w); catalogueDirty = true; RebuildIndex();
-                            Toast(p, Msg("AddedServer", p, w.Name, Msg(s.Kind.ToString(), p)));
+                            Toast(p, Msg("AddedServer", p, w.Name, Msg(kind.ToString(), p)));
                         }
                         else
                         {
-                            Submit(p, id.ToString(), s.Kind, r != null ? r.Title : null, stayOnTab: true);
+                            Submit(p, id.ToString(), KindFromTags(r, s.Kind), r != null ? r.Title : null, stayOnTab: true);
                         }
                         Redraw(p, rail: true, side: true); return;
                     }
@@ -1673,6 +1674,17 @@ namespace Oxide.Plugins
 
         private BrowseResult BrowseItem(ulong id) { BrowseResult r; return browseItems.TryGetValue(id, out r) ? r : null; }
 
+        private Kind KindFromTags(BrowseResult r, Kind fallback)
+        {
+            if (r == null) return fallback;
+            foreach (var k in Kinds)
+            {
+                List<string> tags;
+                if (config.Browser.Tags.TryGetValue(k.ToString(), out tags) && r.Tags.Any(t => tags.Contains(t))) return k;
+            }
+            return fallback;
+        }
+
         private bool BrowserReady => config.Browser.Enabled && !string.IsNullOrEmpty(config.Browser.ApiKey);
 
         private static int QueryType(string sort)
@@ -1815,17 +1827,19 @@ namespace Oxide.Plugins
             int y = 14;
             bool admin = IsAdmin(p);
             bool onServer = byId.ContainsKey(r.Id);
+            var itemKind = KindFromTags(r, s.Kind);
+            Label(c, UiSide, Msg("BrowseSurface", p, Msg(itemKind.ToString(), p)), 13, C.Accent, TextAnchor.MiddleLeft, "0 1", "1 1", "16 -392", "-16 -370", bold: true);
             bool mine = Info(p.userID).Mine.Any(m => m.Id == r.Id);
             if (admin)
             {
-                Button(c, UiSide, onServer ? $"{Cmd} noop" : $"{Cmd} badd {r.Id} server", onServer ? C.PanelHi : C.Accent, "0 0", "1 0", onServer ? Msg("AlreadyListed", p) : Msg("BrowseAddServer", p, Msg(s.Kind.ToString(), p)), 13, onServer ? C.TextFaint : C.OnAccent, $"16 {y}", $"-16 {y + 36}");
+                Button(c, UiSide, onServer ? $"{Cmd} noop" : $"{Cmd} badd {r.Id} server", onServer ? C.PanelHi : C.Accent, "0 0", "1 0", onServer ? Msg("AlreadyListed", p) : Msg("BrowseAddServer", p), 13, onServer ? C.TextFaint : C.OnAccent, $"16 {y}", $"-16 {y + 36}");
                 y += 42;
                 Input(c, UiSide, $"{Cmd} bcoll", s.BrowseCollection, Msg("BrowseCollectionHint", p), "0 0", "1 0", $"16 {y}", $"-16 {y + 30}", 12);
                 y += 40;
             }
             if (config.Submissions.Enabled && permission.UserHasPermission(p.UserIDString, PermSubmit))
             {
-                Button(c, UiSide, mine ? $"{Cmd} noop" : $"{Cmd} badd {r.Id} mine", mine ? C.PanelHi : C.AccentDim, "0 0", "1 0", mine ? Msg("AlreadyMine", p) : Msg("BrowseAddMine", p, Msg(s.Kind.ToString(), p)), 13, mine ? C.TextFaint : C.Text, $"16 {y}", $"-16 {y + 36}");
+                Button(c, UiSide, mine ? $"{Cmd} noop" : $"{Cmd} badd {r.Id} mine", mine ? C.PanelHi : C.AccentDim, "0 0", "1 0", mine ? Msg("AlreadyMine", p) : Msg("BrowseAddMine", p), 13, mine ? C.TextFaint : C.Text, $"16 {y}", $"-16 {y + 36}");
                 y += 44;
             }
             Label(c, UiSide, Msg("BrowseNote", p), 11, C.TextDim, TextAnchor.LowerLeft, "0 0", "1 0", $"16 {y}", $"-16 {y + 48}");
@@ -2315,9 +2329,10 @@ namespace Oxide.Plugins
                 ["Subs"] = "{0} subscribers", ["Listed"] = "ADDED",
                 ["BrowseSelected"] = "From the Workshop",
                 ["BrowseWorkshopId"] = "Workshop ID {0}",
-                ["BrowseAddServer"] = "ADD TO SERVER ({0})", ["BrowseAddMine"] = "ADD TO MY WALLPAPERS ({0})",
-                ["BrowseCollectionHint"] = "Collection for server adds (optional), Enter",
-                ["BrowseNote"] = "Adds it for the surface selected at the top. Only items Steam lists publicly show up here; you can still paste any link in My Wallpapers.",
+                ["BrowseAddServer"] = "ADD FOR EVERYONE", ["BrowseAddMine"] = "ADD JUST FOR ME",
+                ["BrowseSurface"] = "{0} wallpaper",
+                ["BrowseCollectionHint"] = "Collection for everyone-adds (optional), Enter",
+                ["BrowseNote"] = "EVERYONE puts it in the server's list for all players. JUST FOR ME puts it in My Wallpapers. Only items Steam lists publicly appear here; any link can still be pasted in My Wallpapers.",
                 ["AlreadyListed"] = "ALREADY ON THE SERVER",
                 ["AddedServer"] = "Added \"{0}\" to the server ({1})",
                 ["HelpNoKey"] = "(no key on this server)",

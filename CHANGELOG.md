@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.8.1
+- Workshop browser: clearer buttons, **ADD FOR EVERYONE** (admins) and **ADD JUST FOR ME**. The surface
+  (wall/floor/ceiling) now comes from the item's own Workshop tag and is shown above the buttons.
+
 ## 1.8.0
 - Tidier menu: tabs grouped under **Wallpapers**, **Yours** and **Find more**, with Settings, Help and
   Admin pinned at the bottom.
