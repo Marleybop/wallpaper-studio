@@ -65,8 +65,8 @@ The menu has a **Help** tab that explains everything using the server's actual s
     stutter. Outside faces are skipped.
 - **Undo:** covers every placement, strip and bulk job (last 30 actions, 15 minutes, both configurable).
   Use UNDO 1 / 5 / ALL or `/wp undo [n|all]`. Cloth is settled both ways.
-- **My Wallpapers:** `/wp add <link> [wall|floor|ceiling]` in chat. Chat accepts pasted links; the
-  in-menu boxes don't.
+- **My Wallpapers:** paste a Steam Workshop link or ID into the box in the My Wallpapers tab and press
+  Enter, or use chat: `/wp add <link> [wall|floor|ceiling]`.
 - **Cost:** every placement costs the game's single wallpaper price. To make it free:
   - for everyone, set "Everything is free for everyone" in the config
   - for a group, `oxide.grant group <group> wallpaperstudio.free`

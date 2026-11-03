@@ -16,7 +16,7 @@ using HarmonyLib;
 
 namespace Oxide.Plugins
 {
-    [Info("Wallpaper Studio", "Marleybop", "1.5.0")]
+    [Info("Wallpaper Studio", "Marleybop", "1.5.1")]
     [Description("Fast wallpaper picker: search, collections, favourites, themes, list/grid views, eyedropper, bulk paint/strip with undo, and player-submitted Workshop wallpapers.")]
     public class WallpaperStudio : RustPlugin
     {
@@ -1591,7 +1591,7 @@ namespace Oxide.Plugins
             Redraw(p, grid: true);
         }
 
-        // Admins can also add from chat, which accepts pasted links: /wp admin add <links...> [wall|floor|ceiling] [collection]
+        // Admins can also add from the server console or F1: wpstudio.add <link> [wall|floor|ceiling] [collection]
         [ConsoleCommand("wpstudio.add")]
         private void AddCommand(ConsoleSystem.Arg arg)
         {
@@ -2128,8 +2128,8 @@ namespace Oxide.Plugins
                 ["HelpUndo"] = "<color=#8cc63f><b>UNDO</b></color>\nEvery placement, strip and bulk job can be undone: your last {0} actions for {1} minutes. Use UNDO 1 / 5 / ALL in the side panel, or /{2} undo [number|all]. Cloth is settled automatically.",
                 ["HelpBulk"] = "<color=#8cc63f><b>BULK PAINT / STRIP</b></color>\nLook at your building and press BULK. Choose PAINT or STRIP, which surfaces (ALL 3 uses the theme in your tool) and THIS LEVEL or WHOLE BUILDING. Up to {0} surfaces at a time. Outside faces are skipped.",
                 ["HelpThemes"] = "<color=#8cc63f><b>THEMES</b></color>\nA matching wall + floor + ceiling. In the Themes tab, type a name to save what's in your tool (up to {0}), or use /{1} theme <name>. Click a theme to load all three.",
-                ["HelpSubmit"] = "<color=#8cc63f><b>MY WALLPAPERS</b></color>\nAdd Steam Workshop wallpapers of your own (up to {1}). Pasting doesn't work in menu boxes, so paste the link in chat: /{0} add <link> [wall|floor|ceiling].",
-                ["HelpSubmitApproval"] = "<color=#8cc63f><b>MY WALLPAPERS</b></color>\nAdd Steam Workshop wallpapers of your own (up to {1}). An admin approves them first. Paste the link in chat: /{0} add <link> [wall|floor|ceiling].",
+                ["HelpSubmit"] = "<color=#8cc63f><b>MY WALLPAPERS</b></color>\nAdd Steam Workshop wallpapers of your own (up to {1}): open My Wallpapers, paste a Workshop link or ID into the box and press Enter. Or use chat: /{0} add <link> [wall|floor|ceiling].",
+                ["HelpSubmitApproval"] = "<color=#8cc63f><b>MY WALLPAPERS</b></color>\nAdd Steam Workshop wallpapers of your own (up to {1}): open My Wallpapers, paste a Workshop link or ID into the box and press Enter, or use chat: /{0} add <link> [wall|floor|ceiling]. An admin approves them first.",
                 ["HelpTeam"] = "Your team can use each other's approved ones.",
                 ["HelpBinds"] = "<color=#8cc63f><b>KEY BINDS (any key, set once in F1)</b></color>\nbind q wpstudio.ui toggle   <color=#9aa0a0>open/close</color>\nbind c wpstudio.ui copy   <color=#9aa0a0>copy</color>\nbind x wpstudio.ui strip   <color=#9aa0a0>strip</color>\nbind z \"wpstudio.ui undo 1\"   <color=#9aa0a0>undo</color>\nbind v wpstudio.ui next   <color=#9aa0a0>next</color>   ·   bind n wpstudio.ui bulk   <color=#9aa0a0>bulk</color>",
                 ["HudKeys"] = "{0} next · {1} copy · {2} strip",
@@ -2140,12 +2140,12 @@ namespace Oxide.Plugins
                 ["BtnCopy"] = "COPY FROM WALL  (look at it)",
                 ["BtnBulk"] = "BULK: PAINT / STRIP A ROOM",
                 ["UndoLabel"] = "UNDO HISTORY: {0} action(s)", ["Undo1"] = "UNDO 1", ["Undo5"] = "UNDO 5", ["UndoAll"] = "UNDO ALL",
-                ["SubmitBox"] = "Type a Workshop ID, then Enter",
-                ["SubmitHint"] = "Add your own {1} wallpaper. Pasting doesn't work in this box, so to paste a link use chat:\n/{0} add <link>",
+                ["SubmitBox"] = "Paste a Workshop link or ID, then Enter",
+                ["SubmitHint"] = "Add your own {1} wallpaper: paste a Steam Workshop link or ID and press Enter.\nOr in chat: /{0} add <link>",
                 ["AdminAdd"] = "ADD WALLPAPERS", ["AdminEdit"] = "EDIT WALLPAPER",
                 ["EditOn"] = "EDIT MODE: ON (gears on tiles)", ["EditOff"] = "EDIT MODE: OFF",
                 ["FieldId"] = "Workshop ID(s)", ["FieldName"] = "Name (blank = from Steam)", ["FieldCollection"] = "Collection", ["FieldTags"] = "Tags (comma separated)",
-                ["AdminTips"] = "Press Enter after typing in each box.\n\nSeveral IDs at once add a batch with the same collection.\n\nPasting doesn't work in these boxes, so use the server console or F1 instead:\nwpstudio.add <link> [wall|floor|ceiling] [collection]\n\nImport a list of IDs from oxide/data/WallpaperStudio/import.json:\nwpstudio.importlist",
+                ["AdminTips"] = "Press Enter after typing in each box.\n\nSeveral IDs at once add a batch with the same collection.\n\nLinks can be pasted straight into the ID box. From the console or F1:\nwpstudio.add <link> [wall|floor|ceiling] [collection]\n\nImport a list of IDs from oxide/data/WallpaperStudio/import.json:\nwpstudio.importlist",
                 ["Save"] = "SAVE", ["Add"] = "ADD", ["Delete"] = "DELETE", ["Cancel"] = "CANCEL",
                 ["Queue"] = "SUBMISSIONS AWAITING APPROVAL ({0})", ["Approve"] = "APPROVE", ["ApproveAdd"] = "APPROVE + ADD", ["Deny"] = "DENY",
                 ["Saved"] = "Saved {0}", ["Deleted"] = "Deleted {0}", ["AddedN"] = "Added {0} ({1} already listed)",
