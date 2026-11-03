@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.13.0
+- Admin tab: one "Auto update" switch; update messages in game no longer name the source.
+- Names that come from Steam have formatting tags stripped, so they can't distort the menu.
+- A short cooldown between wallpaper adds, to limit Steam lookups.
+
 ## 1.12.2
 - Fix: text box placeholders are created before their input field (removes the "Unable to find
   placeholder panel" client message).

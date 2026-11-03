@@ -16,7 +16,7 @@ using HarmonyLib;
 
 namespace Oxide.Plugins
 {
-    [Info("Wallpaper Studio", "Marleybop", "1.12.2")]
+    [Info("Wallpaper Studio", "Marleybop", "1.13.0")]
     [Description("Fast wallpaper picker: search, collections, favourites, themes, list/grid views, eyedropper, bulk paint/strip with undo, and player-submitted Workshop wallpapers.")]
     public class WallpaperStudio : RustPlugin
     {
@@ -91,7 +91,7 @@ namespace Oxide.Plugins
             [JsonProperty("Allow mature (adult) wallpapers - ones Steam flags as sexual/nudity content (most players' games won't show them anyway)")]
             public bool AllowMature = false;
 
-            [JsonProperty("Plugin updates (from the GitHub releases)")]
+            [JsonProperty("Plugin updates")]
             public UpdateSettings Updates = new UpdateSettings();
 
             [JsonProperty("Workshop browser (in-menu Steam Workshop search)")]
@@ -122,7 +122,7 @@ namespace Oxide.Plugins
             [JsonProperty("Check for updates")] public bool Check = true;
             [JsonProperty("Install updates automatically")] public bool AutoInstall = true;
             [JsonProperty("Check every (hours)")] public float Hours = 6f;
-            [JsonProperty("GitHub repository (owner/name)")] public string Repo = "Marleybop/wallpaper-studio";
+            [JsonProperty("Update source (owner/name)")] public string Repo = "Marleybop/wallpaper-studio";
         }
 
         private class BrowserSettings
@@ -865,6 +865,8 @@ namespace Oxide.Plugins
             });
         }
 
+        private static string Clean(string s) => string.IsNullOrEmpty(s) ? s : s.Replace("<", "‹").Replace(">", "›");
+
         private static string Trim(string s, int max) => s.Length > max ? s.Substring(0, max - 1) + "…" : s;
 
         #endregion
@@ -1374,7 +1376,6 @@ namespace Oxide.Plugins
                 new { Key = "free", On = config.FreeForAll, Label = Msg("SrvFree", p) },
                 new { Key = "outside", On = config.AllowOutside, Label = Msg("SrvOutside", p) },
                 new { Key = "hotkeys", On = config.Hotkeys.Enabled, Label = Msg("SrvHotkeys", p) },
-                new { Key = "updcheck", On = config.Updates.Check, Label = Msg("SrvUpdCheck", p) },
                 new { Key = "updinstall", On = config.Updates.AutoInstall, Label = Msg("SrvUpdInstall", p) },
             };
             int y = -342;
@@ -1842,7 +1843,7 @@ namespace Oxide.Plugins
             var current = new System.Version(Version.Major, Version.Minor, Version.Patch);
             webrequest.Enqueue($"https://api.github.com/repos/{config.Updates.Repo}/tags?per_page=100", null, (code, body) =>
             {
-                if (code != 200) { say($"Update check failed (GitHub returned {code})."); return; }
+                if (code != 200) { say($"Update check failed ({code})."); return; }
                 System.Version latest = null; string tag = null;
                 try
                 {
@@ -1852,7 +1853,7 @@ namespace Oxide.Plugins
                         if (v != null && (latest == null || v > latest)) { latest = v; tag = name; }
                     }
                 }
-                catch { say("Update check failed (couldn't read GitHub's reply)."); return; }
+                catch { say("Update check failed (unreadable reply)."); return; }
                 if (latest == null || latest <= current) { say($"Wallpaper Studio is up to date (v{current})."); updateNotice = null; return; }
                 updateNotice = $"Wallpaper Studio v{latest} is available (running v{current}).";
                 if (!install) { say(updateNotice + " Run 'wpstudio.update install' to install it."); NotifyAdmins(updateNotice); return; }
@@ -1888,7 +1889,7 @@ namespace Oxide.Plugins
         {
             if (arg.Connection != null && !permission.UserHasPermission(arg.Player()?.UserIDString ?? "", PermAdmin)) return;
             bool install = arg.GetString(0) == "install";
-            arg.ReplyWith(install ? "Checking GitHub and installing if newer..." : "Checking GitHub for a newer version...");
+            arg.ReplyWith(install ? "Checking for updates and installing if newer..." : "Checking for updates...");
             CheckForUpdate(install, null);
         }
 
@@ -1989,7 +1990,7 @@ namespace Oxide.Plugins
                                 if (mature && !config.AllowMature) continue;
                                 var item = new BrowseResult
                                 {
-                                    Id = id, Title = f.Value<string>("title") ?? id.ToString(), Preview = f.Value<string>("preview_url") ?? "",
+                                    Id = id, Title = Clean(f.Value<string>("title")) ?? id.ToString(), Preview = f.Value<string>("preview_url") ?? "",
                                     Subs = f.Value<int?>("subscriptions") ?? 0, Mature = mature,
                                     Tags = (f["tags"] as JArray)?.Select(t => t.Value<string>("tag")).Where(t => t != null).ToList() ?? new List<string>()
                                 };
@@ -2099,6 +2100,8 @@ namespace Oxide.Plugins
 
         #endregion
 
+        private readonly Dictionary<ulong, float> addCooldown = new Dictionary<ulong, float>();
+
         private void LookupSteam(ulong id, Action<string, string> done)
         {
             if (!config.Submissions.SteamLookup) { done(null, ""); return; }
@@ -2113,7 +2116,7 @@ namespace Oxide.Plugins
                         var d = code == 200 ? JObject.Parse(body)["response"]?["publishedfiledetails"]?[0] : null;
                         if (d != null && (d.Value<int?>("result") ?? 0) == 1)
                         {
-                            title = d.Value<string>("title");
+                            title = Clean(d.Value<string>("title"));
                             check = d.Value<uint?>("consumer_appid") != 252490 && d.Value<uint?>("consumer_app_id") != 252490 ? "not a Rust item" : IsMature(d) ? "mature" : "ok";
                         }
                         else if (d != null) check = "hidden or removed";
@@ -2136,7 +2139,7 @@ namespace Oxide.Plugins
                             if (result == 1)
                             {
                                 check = d.Value<uint?>("consumer_app_id") == 252490 ? "ok" : "not a Rust item";
-                                title = d.Value<string>("title");
+                                title = Clean(d.Value<string>("title"));
                             }
                             else check = "hidden or removed";   // common for wallpaper items; they can still work
                         }
@@ -2151,6 +2154,9 @@ namespace Oxide.Plugins
             if (!config.Submissions.Enabled || !permission.UserHasPermission(p.UserIDString, PermSubmit)) { Toast(p, Msg("NoPerm", p)); return; }
             ulong id;
             if (!ParseId(text, out id)) { Toast(p, Msg("BadId", p)); return; }
+            float now = UnityEngine.Time.realtimeSinceStartup, last;
+            if (addCooldown.TryGetValue(p.userID, out last) && now - last < 3f) { Toast(p, Msg("SlowDown", p)); return; }
+            addCooldown[p.userID] = now;
             var info = Info(p.userID);
             if (info.Mine.Any(m => m.Id == id)) { Toast(p, Msg("AlreadyMine", p)); return; }
             if (info.Mine.Count >= config.Submissions.MaxPerPlayer) { Toast(p, Msg("TooMany", p, config.Submissions.MaxPerPlayer)); return; }
@@ -2641,6 +2647,7 @@ namespace Oxide.Plugins
                 ["MatureWarn"] = "Steam flags that wallpaper as mature content, so most players' games won't show it",
                 ["MatureBlocked"] = "That wallpaper is flagged as mature content, which this server doesn't allow",
                 ["MatureTag"] = "MATURE",
+                ["SlowDown"] = "Give it a few seconds between adds",
                 ["RemoveShort"] = "REMOVE", ["DeleteShort"] = "DELETE",
                 ["SrvTitle"] = "SERVER SETTINGS (apply to everyone, saved straight away)",
                 ["SrvMature"] = "Allow mature (adult) wallpapers",
@@ -2648,10 +2655,10 @@ namespace Oxide.Plugins
                 ["SrvOutside"] = "Allow wallpaper on outside faces (click them, or tick it in BULK)",
                 ["IncludeOutside"] = "INCLUDE OUTSIDE FACES",
                 ["SrvHotkeys"] = "Hotkeys while holding the tool (R, Shift+R, Shift+E)",
-                ["SrvUpdCheck"] = "Check GitHub for plugin updates",
-                ["SrvUpdInstall"] = "Install plugin updates automatically",
+                ["SrvUpdCheck"] = "Check for updates",
+                ["SrvUpdInstall"] = "Auto update",
                 ["SrvCheckNow"] = "CHECK FOR UPDATE NOW",
-                ["SrvChecking"] = "Checking GitHub for a newer version...",
+                ["SrvChecking"] = "Checking for updates...",
                 ["Checking"] = "Checking that wallpaper with Steam...",
                 ["CantVerify"] = "Couldn't check that wallpaper with Steam, so it wasn't added. Try again in a moment.",
                 ["UpdateInstalling"] = "Installing Wallpaper Studio v{0}; it reloads in a moment",
