@@ -16,7 +16,7 @@ using HarmonyLib;
 
 namespace Oxide.Plugins
 {
-    [Info("Wallpaper Studio", "Marleybop", "1.10.1")]
+    [Info("Wallpaper Studio", "Marleybop", "1.11.0")]
     [Description("Fast wallpaper picker: search, collections, favourites, themes, list/grid views, eyedropper, bulk paint/strip with undo, and player-submitted Workshop wallpapers.")]
     public class WallpaperStudio : RustPlugin
     {
@@ -332,11 +332,8 @@ namespace Oxide.Plugins
             foreach (var player in BasePlayer.activePlayerList)
                 if (HoldingTool(player)) ToolWatcher.Attach(player);
             timer.Every(30f, () => SaveData());
-            if (config.Updates.Check)
-            {
-                timer.Once(20f, () => CheckForUpdate(config.Updates.AutoInstall, null));
-                timer.Every(Mathf.Max(1f, config.Updates.Hours) * 3600f, () => CheckForUpdate(config.Updates.AutoInstall, null));
-            }
+            timer.Once(20f, () => { if (config.Updates.Check) CheckForUpdate(config.Updates.AutoInstall, null); });
+            timer.Every(Mathf.Max(1f, config.Updates.Hours) * 3600f, () => { if (config.Updates.Check) CheckForUpdate(config.Updates.AutoInstall, null); });
             if (catalogue.Items.Count == 0)
                 Puts("Catalogue is empty. Admins: open the menu and use Admin > Add, or 'wpstudio.importlist' to import a list of IDs.");
         }
@@ -1361,6 +1358,25 @@ namespace Oxide.Plugins
             Chips(c, UiGrid, "0.24 1", 0, -240, -212, 92, Kinds.Select(k => new KeyValuePair<string, string>(((int)k).ToString(), Msg(k.ToString(), p).ToUpper())), ((int)d.Kind).ToString(), $"{Cmd} draft kind", 12);
             Button(c, UiGrid, $"{Cmd} save", C.Accent, "0.24 1", "0.24 1", Msg("Add", p), 13, C.OnAccent, "0 -288", "140 -254");
             Label(c, UiGrid, Msg("AdminTips", p), 11, C.TextDim, TextAnchor.UpperLeft, "0.66 1", "1 1", "0 -290", "0 -40");
+
+            // server-wide switches (saved to the config immediately)
+            Label(c, UiGrid, Msg("SrvTitle", p), 14, C.Accent, TextAnchor.MiddleLeft, "0 1", "1 1", "0 -334", "0 -310", bold: true);
+            var rows = new[]
+            {
+                new { Key = "mature", On = config.AllowMature, Label = Msg("SrvMature", p) },
+                new { Key = "free", On = config.FreeForAll, Label = Msg("SrvFree", p) },
+                new { Key = "hotkeys", On = config.Hotkeys.Enabled, Label = Msg("SrvHotkeys", p) },
+                new { Key = "updcheck", On = config.Updates.Check, Label = Msg("SrvUpdCheck", p) },
+                new { Key = "updinstall", On = config.Updates.AutoInstall, Label = Msg("SrvUpdInstall", p) },
+            };
+            int y = -342;
+            foreach (var r in rows)
+            {
+                Label(c, UiGrid, r.Label, 12, C.Text, TextAnchor.MiddleLeft, "0 1", "0.62 1", $"0 {y - 28}", $"0 {y}");
+                Chips(c, UiGrid, "0.62 1", 0, y - 28, y, 64, new[] { new KeyValuePair<string, string>("on", Msg("On", p)), new KeyValuePair<string, string>("off", Msg("Off", p)) }, r.On ? "on" : "off", $"{Cmd} srv {r.Key}", 11);
+                y -= 34;
+            }
+            Button(c, UiGrid, $"{Cmd} srvupdate", C.PanelHi, "0 1", "0 1", Msg("SrvCheckNow", p), 11, C.Text, $"0 {y - 28}", $"200 {y}");
         }
 
         private void BuildBulkModal(CuiElementContainer c, BasePlayer p)
@@ -1588,6 +1604,23 @@ namespace Oxide.Plugins
             }
 
             if (!admin) return;
+            if (action == "srv")
+            {
+                bool on = arg.GetString(2) == "on";
+                switch (arg.GetString(1))
+                {
+                    case "mature": config.AllowMature = on; browseCache.Clear(); break;
+                    case "free": config.FreeForAll = on; break;
+                    case "hotkeys": config.Hotkeys.Enabled = on; cycleEnabled = on; break;
+                    case "updcheck": config.Updates.Check = on; break;
+                    case "updinstall": config.Updates.AutoInstall = on; break;
+                    default: return;
+                }
+                SaveConfig();
+                Puts($"{p.displayName} set '{arg.GetString(1)}' to {(on ? "on" : "off")} in the Admin tab");
+                Redraw(p, grid: true, side: true); return;
+            }
+            if (action == "srvupdate") { Toast(p, Msg("SrvChecking", p)); CheckForUpdate(false, msg => Toast(p, msg)); return; }
             switch (action)
             {
                 case "draft":
@@ -2564,6 +2597,14 @@ namespace Oxide.Plugins
                 ["MatureWarn"] = "Steam flags that wallpaper as mature content, so most players' games won't show it",
                 ["MatureBlocked"] = "That wallpaper is flagged as mature content, which this server doesn't allow",
                 ["MatureTag"] = "MATURE",
+                ["SrvTitle"] = "SERVER SETTINGS (apply to everyone, saved straight away)",
+                ["SrvMature"] = "Allow mature (adult) wallpapers",
+                ["SrvFree"] = "Free for everyone (no cloth cost)",
+                ["SrvHotkeys"] = "Hotkeys while holding the tool (R, Shift+R, Shift+E)",
+                ["SrvUpdCheck"] = "Check GitHub for plugin updates",
+                ["SrvUpdInstall"] = "Install plugin updates automatically",
+                ["SrvCheckNow"] = "CHECK FOR UPDATE NOW",
+                ["SrvChecking"] = "Checking GitHub for a newer version...",
                 ["Checking"] = "Checking that wallpaper with Steam...",
                 ["CantVerify"] = "Couldn't check that wallpaper with Steam, so it wasn't added. Try again in a moment.",
                 ["UpdateInstalling"] = "Installing Wallpaper Studio v{0}; it reloads in a moment",

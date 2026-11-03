@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.11.0
+- Admin tab: SERVER SETTINGS with ON/OFF switches for mature wallpapers, free for everyone, hotkeys,
+  update checks and automatic installs, plus CHECK FOR UPDATE NOW. Changes save to the config at once.
+
 ## 1.10.1
 - With mature content disallowed, a pasted wallpaper is only added after Steam confirms it isn't
   mature (before, it was added and then removed a moment later). If it can't be checked, it isn't added.
