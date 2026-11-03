@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.13.1
+- Workshop browser no longer lists items of the old "Wallpaper" type, which no longer load in game
+  (existing configs are cleaned automatically).
+
 ## 1.13.0
 - Admin tab: one "Auto update" switch; update messages in game no longer name the source.
 - Names that come from Steam have formatting tags stripped, so they can't distort the menu.

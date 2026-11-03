@@ -16,7 +16,7 @@ using HarmonyLib;
 
 namespace Oxide.Plugins
 {
-    [Info("Wallpaper Studio", "Marleybop", "1.13.0")]
+    [Info("Wallpaper Studio", "Marleybop", "1.13.1")]
     [Description("Fast wallpaper picker: search, collections, favourites, themes, list/grid views, eyedropper, bulk paint/strip with undo, and player-submitted Workshop wallpapers.")]
     public class WallpaperStudio : RustPlugin
     {
@@ -132,7 +132,7 @@ namespace Oxide.Plugins
             [JsonProperty("Workshop tags per surface (an item matches if it has any of them; empty = search text only)")]
             public Dictionary<string, List<string>> Tags = new Dictionary<string, List<string>>
             {
-                { "Wall", new List<string> { "Wallpaper Wall", "Wallpaper" } },
+                { "Wall", new List<string> { "Wallpaper Wall" } },
                 { "Floor", new List<string> { "Wallpaper Flooring" } },
                 { "Ceiling", new List<string> { "Wallpaper Ceiling" } }
             };
@@ -173,6 +173,8 @@ namespace Oxide.Plugins
             {
                 config = Config.ReadObject<Configuration>();
                 if (config == null) throw new Exception("empty");
+                // the old plain "Wallpaper" item type no longer loads in game, so never search for it
+                foreach (var list in config.Browser.Tags.Values) list.RemoveAll(t => t == "Wallpaper");
             }
             catch (Exception e)
             {
