@@ -16,7 +16,7 @@ using HarmonyLib;
 
 namespace Oxide.Plugins
 {
-    [Info("Wallpaper Studio", "Marleybop", "1.10.0")]
+    [Info("Wallpaper Studio", "Marleybop", "1.10.1")]
     [Description("Fast wallpaper picker: search, collections, favourites, themes, list/grid views, eyedropper, bulk paint/strip with undo, and player-submitted Workshop wallpapers.")]
     public class WallpaperStudio : RustPlugin
     {
@@ -2111,14 +2111,24 @@ namespace Oxide.Plugins
             if (info.Mine.Any(m => m.Id == id)) { Toast(p, Msg("AlreadyMine", p)); return; }
             if (info.Mine.Count >= config.Submissions.MaxPerPlayer) { Toast(p, Msg("TooMany", p, config.Submissions.MaxPerPlayer)); return; }
             var sub = new Submission { Id = id, Name = string.IsNullOrEmpty(knownTitle) ? id.ToString() : knownTitle, Kind = kind };
-            info.Mine.Add(sub); playersDirty = true;
-            Toast(p, Msg("SubmittedOk", p, Msg(kind.ToString(), p)));
+            // With mature content disallowed, add only after Steam has confirmed the item (no window where it's usable).
+            bool strict = !config.AllowMature;
+            if (strict && !BrowserReady) { Toast(p, Msg("CantVerify", p)); return; }
+            if (!strict) { info.Mine.Add(sub); playersDirty = true; Toast(p, Msg("SubmittedOk", p, Msg(kind.ToString(), p))); }
+            else Toast(p, Msg("Checking", p));
             LookupSteam(id, (title, check) =>
             {
                 sub.SteamCheck = check;
                 if (!string.IsNullOrEmpty(title)) sub.Name = title;
+                if (strict)
+                {
+                    if (check == "mature") { Toast(p, Msg("MatureBlocked", p)); return; }
+                    if (check == "lookup failed" || check == "unknown") { Toast(p, Msg("CantVerify", p)); return; }
+                    if (info.Mine.Any(m => m.Id == sub.Id)) return;
+                    info.Mine.Add(sub);
+                    Toast(p, Msg("SubmittedOk", p, Msg(kind.ToString(), p)));
+                }
                 if (check == "not a Rust item") { sub.Status = "denied"; Toast(p, Msg("NotRust", p)); }
-                else if (check == "mature" && !config.AllowMature) { info.Mine.Remove(sub); Toast(p, Msg("MatureBlocked", p)); }
                 else if (check == "mature") { sub.Status = "mature"; Toast(p, Msg("MatureWarn", p)); }
                 playersDirty = true;
                 if (p != null && p.IsConnected) Redraw(p, grid: true);
@@ -2554,6 +2564,8 @@ namespace Oxide.Plugins
                 ["MatureWarn"] = "Steam flags that wallpaper as mature content, so most players' games won't show it",
                 ["MatureBlocked"] = "That wallpaper is flagged as mature content, which this server doesn't allow",
                 ["MatureTag"] = "MATURE",
+                ["Checking"] = "Checking that wallpaper with Steam...",
+                ["CantVerify"] = "Couldn't check that wallpaper with Steam, so it wasn't added. Try again in a moment.",
                 ["UpdateInstalling"] = "Installing Wallpaper Studio v{0}; it reloads in a moment",
                 ["MatureWarnAdmin"] = "Heads up: Steam flags \"{0}\" as mature, so most players won't see it",
                 ["Selected"] = "In your tool: {0}", ["Selected1"] = "Selected: {0}",

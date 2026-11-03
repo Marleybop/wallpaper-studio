@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.10.1
+- With mature content disallowed, a pasted wallpaper is only added after Steam confirms it isn't
+  mature (before, it was added and then removed a moment later). If it can't be checked, it isn't added.
+
 ## 1.10.0
 - Text boxes use a real placeholder that disappears as you type.
 - Mature content: "Allow mature (adult) wallpapers" (off by default). When it's off, mature-flagged Workshop
