@@ -109,8 +109,7 @@ The plugin checks the latest `vX.Y.Z` release tag on GitHub every 6 hours and, b
 - It downloads that release's plugin file and checks it really is Wallpaper Studio at that version.
 - It backs up the current file to `oxide/data/WallpaperStudio/backups/`, then replaces it, and Oxide
   reloads it.
-- Turn off "Check for updates" or "Install updates automatically" in the config ("Plugin updates") to
-  stop this.
+- Switch **Auto update** off in Admin → SERVER SETTINGS (or in the config) to stop this.
 - `wpstudio.update` checks now; `wpstudio.update install` installs a newer release now.
 - To roll back, copy the backup over `oxide/plugins/WallpaperStudio.cs`.
 
