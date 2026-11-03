@@ -10,7 +10,7 @@ for i in $(seq 1 90); do
   out=$(tail -n +$n "$L" | grep -E "WallpaperStudio|Wallpaper Studio" | grep -iE "error|loaded|failed|exception")
   if [ -n "$out" ]; then
     tail -n +$n "$L" | grep -E -A3 "WallpaperStudio|Wallpaper Studio"
-    echo "$out" | grep -qi "error|failed|exception" && exit 1
+    echo "$out" | grep -qiE "error|failed|exception" && exit 1
     exit 0
   fi
   sleep 1
