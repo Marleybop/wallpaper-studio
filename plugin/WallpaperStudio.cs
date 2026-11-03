@@ -2332,8 +2332,7 @@ namespace Oxide.Plugins
                 ["Tips"] = "Holding the tool:  {0} next  ·  {1} copy  ·  {2} strip\nOwn keys: F1 → <color=#c8e6a0>bind q wpstudio.ui toggle</color>\nEverything else: the <b>Help</b> tab or /{3} help",
                 ["TabHelp"] = "Help",
                 ["TabBrowse"] = "Browse Workshop",
-                ["HelpBrowse"] = "<color=#8cc63f><b>BROWSE WORKSHOP</b></color>
-Search the Steam Workshop without leaving the game: pick a surface, type in the search box, sort by trending, top rated, most used or newest, then click a result to preview it and add it.",
+                ["HelpBrowse"] = "<color=#8cc63f><b>BROWSE WORKSHOP</b></color>\nSearch the Steam Workshop without leaving the game: pick a surface, type in the search box, sort by trending, top rated, most used or newest, then click a result to preview it and add it.",
                 ["BrowseNoKey"] = "The Workshop browser isn't set up on this server yet.",
                 ["BrowseNoKeyAdmin"] = "To turn on the Workshop browser, add a Steam Web API key to the config\n(\"Workshop browser\" → \"Steam Web API key\"), then reload the plugin.\nGet one free at steamcommunity.com/dev/apikey.",
                 ["Sort_trend"] = "TRENDING", ["Sort_top"] = "TOP RATED", ["Sort_subs"] = "MOST USED", ["Sort_new"] = "NEWEST",
