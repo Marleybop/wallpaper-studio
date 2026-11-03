@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.11.1
+- SERVER SETTINGS: switch for wallpaper on outside faces.
+
 ## 1.11.0
 - Admin tab: SERVER SETTINGS with ON/OFF switches for mature wallpapers, free for everyone, hotkeys,
   update checks and automatic installs, plus CHECK FOR UPDATE NOW. Changes save to the config at once.

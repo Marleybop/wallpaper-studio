@@ -16,7 +16,7 @@ using HarmonyLib;
 
 namespace Oxide.Plugins
 {
-    [Info("Wallpaper Studio", "Marleybop", "1.11.0")]
+    [Info("Wallpaper Studio", "Marleybop", "1.11.1")]
     [Description("Fast wallpaper picker: search, collections, favourites, themes, list/grid views, eyedropper, bulk paint/strip with undo, and player-submitted Workshop wallpapers.")]
     public class WallpaperStudio : RustPlugin
     {
@@ -1365,6 +1365,7 @@ namespace Oxide.Plugins
             {
                 new { Key = "mature", On = config.AllowMature, Label = Msg("SrvMature", p) },
                 new { Key = "free", On = config.FreeForAll, Label = Msg("SrvFree", p) },
+                new { Key = "outside", On = config.AllowOutside, Label = Msg("SrvOutside", p) },
                 new { Key = "hotkeys", On = config.Hotkeys.Enabled, Label = Msg("SrvHotkeys", p) },
                 new { Key = "updcheck", On = config.Updates.Check, Label = Msg("SrvUpdCheck", p) },
                 new { Key = "updinstall", On = config.Updates.AutoInstall, Label = Msg("SrvUpdInstall", p) },
@@ -1611,6 +1612,7 @@ namespace Oxide.Plugins
                 {
                     case "mature": config.AllowMature = on; browseCache.Clear(); break;
                     case "free": config.FreeForAll = on; break;
+                    case "outside": config.AllowOutside = on; break;
                     case "hotkeys": config.Hotkeys.Enabled = on; cycleEnabled = on; break;
                     case "updcheck": config.Updates.Check = on; break;
                     case "updinstall": config.Updates.AutoInstall = on; break;
@@ -2600,6 +2602,7 @@ namespace Oxide.Plugins
                 ["SrvTitle"] = "SERVER SETTINGS (apply to everyone, saved straight away)",
                 ["SrvMature"] = "Allow mature (adult) wallpapers",
                 ["SrvFree"] = "Free for everyone (no cloth cost)",
+                ["SrvOutside"] = "Allow wallpaper on outside faces (via BULK paint)",
                 ["SrvHotkeys"] = "Hotkeys while holding the tool (R, Shift+R, Shift+E)",
                 ["SrvUpdCheck"] = "Check GitHub for plugin updates",
                 ["SrvUpdInstall"] = "Install plugin updates automatically",
