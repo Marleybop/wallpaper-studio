@@ -57,7 +57,7 @@ In game, **Admin** tab → **SERVER SETTINGS** has simple ON/OFF switches:
 | Allow mature (adult) wallpapers | OFF | Mature-flagged Workshop items are blocked |
 | Free for everyone | OFF | No cloth cost for placing wallpaper |
 | Allow wallpaper on outside faces | OFF | Players can paper outside walls too |
-| Hotkeys | ON | R / Shift+R / Shift+E while holding the tool |
+| Hotkeys | ON | E / Shift+E / Shift+middle mouse while holding the tool (R stays rotate) |
 | Auto update | ON | The plugin keeps itself up to date |
 
 That's it. Everything else is optional.
@@ -89,10 +89,10 @@ The menu's **Help** tab explains everything with your server's real keys and set
 - **Pick a wallpaper:** click it, then place it with the tool as normal.
 - **Switch surface:** the WALL / FLOOR / CEILING buttons. With Auto surface on, the tool also switches
   by itself to whatever you aim at.
-- **Favourites:** click the ★ on any wallpaper. **R** then cycles through your favourites while you
+- **Favourites:** click the ★ on any wallpaper. **E** then steps to the next favourite and **Shift+E** back to the previous one while you
   hold the tool.
-- **Copy a wallpaper:** look at it and press **Shift+R**.
-- **Strip a wallpaper:** look at it and press **Shift+E**. You get the cloth back.
+- **Copy a wallpaper:** look at it and press **Shift+middle mouse**.
+- **Strip a wallpaper:** look at it and type **/wp strip** (or bind a key in F1: `bind x wpstudio.ui strip`). You get the cloth back.
 - **Room Sets:** stand in a room you've decorated, then **COPY THIS ROOM** → name it → **SAVE**. Later,
   **PAINT ROOM** applies it to a whole level.
 - **Bulk:** **BULK: PAINT / STRIP A ROOM** in the side panel does a whole level or building, and shows

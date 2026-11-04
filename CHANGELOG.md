@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.14.0
+- Hotkeys moved off R, which the game's wallpaper tool uses to rotate (e.g. turning a carpet).
+  Next is now **E**, copy is **Shift+middle mouse**. Configs still on the old R / Shift+R defaults are
+  moved over automatically; keys you changed yourself are kept.
+- New **previous** hotkey (**Shift+E**) to step back through favourites / recents.
+- Strip no longer has a default hotkey (Shift+E is now previous): use `/wp strip` or an F1 bind
+  (`bind x wpstudio.ui strip`). Hotkeys never use Ctrl, since it crouches.
+- `/wp next` and `/wp prev` chat commands.
+- Hint, hotbar panel, tips and Help only list the hotkeys that are set.
+- A surface with no wallpapers on the server (e.g. no ceilings added yet) now says so and points to
+  the Steam Workshop tab instead of showing just the Plain tile.
+
 ## 1.13.2
 - Paid wallpapers from the Rust item store are blocked unless the player owns them, just like the
   game's own wallpaper tool. They're refused when added (Admin tab, `wpstudio.add`, `wpstudio.importlist`,

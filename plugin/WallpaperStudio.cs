@@ -16,7 +16,7 @@ using HarmonyLib;
 
 namespace Oxide.Plugins
 {
-    [Info("Wallpaper Studio", "Marleybop", "1.13.2")]
+    [Info("Wallpaper Studio", "Marleybop", "1.14.0")]
     [Description("Fast wallpaper picker: search, collections, favourites, themes, list/grid views, eyedropper, bulk paint/strip with undo, and player-submitted Workshop wallpapers.")]
     public class WallpaperStudio : RustPlugin
     {
@@ -144,9 +144,11 @@ namespace Oxide.Plugins
         private class HotkeySettings
         {
             [JsonProperty("Enabled")] public bool Enabled = true;
-            [JsonProperty("Next favourite / recent")] public Combo Next = new Combo { Button = "RELOAD" };
-            [JsonProperty("Copy wallpaper you look at")] public Combo Copy = new Combo { Button = "RELOAD", Modifier = "SPRINT" };
-            [JsonProperty("Strip surface you look at")] public Combo Strip = new Combo { Button = "USE", Modifier = "SPRINT" };
+            // R is left alone: the game's tool uses it to rotate what you place
+            [JsonProperty("Next favourite / recent")] public Combo Next = new Combo { Button = "USE" };
+            [JsonProperty("Previous favourite / recent")] public Combo Prev = new Combo { Button = "USE", Modifier = "SPRINT" };
+            [JsonProperty("Copy wallpaper you look at")] public Combo Copy = new Combo { Button = "FIRE_THIRD", Modifier = "SPRINT" };
+            [JsonProperty("Strip surface you look at")] public Combo Strip = new Combo();   // no default key (E/Shift+E/Shift+MMB are taken); menu, /wp strip or an F1 bind
         }
 
         private class BulkSettings
@@ -177,6 +179,16 @@ namespace Oxide.Plugins
                 foreach (var list in config.Browser.Tags.Values) list.RemoveAll(t => t == "Wallpaper");
                 // a pasted key often carries a stray space/newline, which Steam rejects with 403; keys are plain hex
                 config.Browser.ApiKey = new string((config.Browser.ApiKey ?? "").Where(char.IsLetterOrDigit).ToArray());
+                // up to 1.13.2 next/copy defaulted to R / Shift+R, which also rotates the tool; move untouched defaults off R
+                var hk = config.Hotkeys;
+                if (hk != null)
+                {
+                    if (hk.Next != null && hk.Next.Button == "RELOAD" && string.IsNullOrEmpty(hk.Next.Modifier)) hk.Next = new Combo { Button = "USE" };
+                    if (hk.Copy != null && hk.Copy.Button == "RELOAD" && hk.Copy.Modifier == "SPRINT") hk.Copy = new Combo { Button = "FIRE_THIRD", Modifier = "SPRINT" };
+                    // 1.14.0: Shift+E becomes previous, so the old Shift+E strip default gives way (Ctrl is never used: it crouches)
+                    if (hk.Prev == null || hk.Prev.Modifier == "DUCK") hk.Prev = new Combo { Button = "USE", Modifier = "SPRINT" };
+                    if (hk.Strip == null || (hk.Strip.Button == hk.Prev.Button && hk.Strip.Modifier == hk.Prev.Modifier)) hk.Strip = new Combo();
+                }
             }
             catch (Exception e)
             {
@@ -329,7 +341,7 @@ namespace Oxide.Plugins
             openEnabled = ParseButton(config.OpenButton, BUTTON.FIRE_THIRD, out openButton);
             cycleEnabled = config.Hotkeys != null && config.Hotkeys.Enabled;
             if (config.Hotkeys == null) config.Hotkeys = new HotkeySettings();
-            foreach (var combo in new[] { config.Hotkeys.Next, config.Hotkeys.Copy, config.Hotkeys.Strip })
+            foreach (var combo in new[] { config.Hotkeys.Next, config.Hotkeys.Prev, config.Hotkeys.Copy, config.Hotkeys.Strip })
             {
                 combo.Valid = ParseButton(combo.Button, BUTTON.RELOAD, out combo.B);
                 combo.HasMod = ParseButton(combo.Modifier, BUTTON.SPRINT, out combo.M);
@@ -380,24 +392,49 @@ namespace Oxide.Plugins
             return true;
         }
 
-        private static string KeyName(string button)
+        private static string KeyName(string button, bool brief = false)
         {
             switch ((button ?? "").ToUpper())
             {
                 case "USE": return "E";
                 case "RELOAD": return "R";
                 case "JUMP": return "Space";
-                case "FIRE_THIRD": return "Middle mouse";
+                case "FIRE_THIRD": return brief ? "MMB" : "Middle mouse";
+                case "FIRE_SECONDARY": return brief ? "RMB" : "Right mouse";
                 case "DUCK": return "Ctrl";
                 case "SPRINT": return "Shift";
                 default: return button;
             }
         }
 
-        private string ComboName(Combo c)
+        private string ComboName(Combo c, bool brief = false)
         {
             if (c == null || !c.Valid || !cycleEnabled) return "-";
-            return (c.HasMod ? KeyName(c.Modifier) + "+" : "") + KeyName(c.Button);
+            return (c.HasMod ? KeyName(c.Modifier, brief) + "+" : "") + KeyName(c.Button, brief);
+        }
+
+        // "E next · Shift+E prev · Shift+MMB copy": only the hotkeys that are actually set
+        private IEnumerable<KeyValuePair<Combo, string>> HotkeyActions()
+        {
+            var hk = config.Hotkeys;
+            yield return new KeyValuePair<Combo, string>(hk.Next, "Next");
+            yield return new KeyValuePair<Combo, string>(hk.Prev, "Prev");
+            yield return new KeyValuePair<Combo, string>(hk.Copy, "Copy");
+            yield return new KeyValuePair<Combo, string>(hk.Strip, "Strip");
+        }
+
+        private string KeyList(BasePlayer p, bool brief)
+        {
+            if (!cycleEnabled) return "/" + ChatCmd;
+            return string.Join(" · ", HotkeyActions().Where(a => a.Key != null && a.Key.Valid).Select(a => ComboName(a.Key, brief) + " " + Msg("Key" + a.Value, p)));
+        }
+
+        private string HelpHotkeys(BasePlayer p)
+        {
+            var lines = new List<string> { Msg("HelpHotkeysTitle", p) };
+            foreach (var a in HotkeyActions())
+                lines.Add(a.Key != null && a.Key.Valid ? $"<b>{ComboName(a.Key)}</b>: " + Msg("HelpKey" + a.Value, p) : Msg("HelpNoKey" + a.Value, p, ChatCmd));
+            return string.Join("\n", lines);
         }
 
         // Pressed now? Combos with a modifier need it held; plain ones need no other modifier held.
@@ -429,7 +466,7 @@ namespace Oxide.Plugins
                 var info = Info(player.userID);
                 if (!info.HintShown && openEnabled)
                 {
-                    Toast(player, Msg("Hint", player, openEnabled ? KeyName(config.OpenButton) : "/" + ChatCmd, ComboName(config.Hotkeys.Next), ComboName(config.Hotkeys.Copy), ComboName(config.Hotkeys.Strip), ChatCmd));
+                    Toast(player, Msg("Hint", player, openEnabled ? KeyName(config.OpenButton) : "/" + ChatCmd, KeyList(player, false)));
                     info.HintShown = true; playersDirty = true;
                 }
             }
@@ -466,20 +503,25 @@ namespace Oxide.Plugins
                 if (UnityEngine.Time.realtimeSinceStartup < nextAllowed) return;
                 var input = player.serverInput;
                 if (Instance.openUi.Contains(player.userID)) return;   // the client sends no input while a cursor menu is open
-                if (Instance.openEnabled && input.WasJustPressed(Instance.openButton))
+                // hotkeys first: a modifier combo on the menu button (Shift+middle mouse = copy) must not also open the menu
+                var hk = Instance.config.Hotkeys;
+                Combo hit = null;
+                if (Instance.cycleEnabled)
+                    foreach (var combo in new[] { hk.Copy, hk.Strip, hk.Prev, hk.Next })
+                        if (Instance.ComboPressed(input, combo)) { hit = combo; break; }
+                if (hit != null)
+                {
+                    nextAllowed = UnityEngine.Time.realtimeSinceStartup + 0.18f;
+                    if (!HoldingTool(player)) { Destroy(this); return; }
+                    if (hit == hk.Copy) Instance.Eyedropper(player);
+                    else if (hit == hk.Strip) Instance.StripOne(player);
+                    else Instance.Cycle(player, hit == hk.Prev);
+                }
+                else if (Instance.openEnabled && input.WasJustPressed(Instance.openButton))
                 {
                     nextAllowed = UnityEngine.Time.realtimeSinceStartup + 0.25f;
                     if (!HoldingTool(player)) { Destroy(this); return; }
                     Instance.OpenUi(player);
-                }
-                else if (Instance.cycleEnabled && (Instance.ComboPressed(input, Instance.config.Hotkeys.Copy) || Instance.ComboPressed(input, Instance.config.Hotkeys.Strip) || Instance.ComboPressed(input, Instance.config.Hotkeys.Next)))
-                {
-                    nextAllowed = UnityEngine.Time.realtimeSinceStartup + 0.18f;
-                    if (!HoldingTool(player)) { Destroy(this); return; }
-                    var hk = Instance.config.Hotkeys;
-                    if (Instance.ComboPressed(input, hk.Copy)) Instance.Eyedropper(player);
-                    else if (Instance.ComboPressed(input, hk.Strip)) Instance.StripOne(player);
-                    else Instance.Cycle(player, false);
                 }
                 else if (Instance.config.AllowOutside && input.WasJustPressed(BUTTON.FIRE_PRIMARY))
                 {
@@ -571,8 +613,8 @@ namespace Oxide.Plugins
             if (skin == 0) Label(c, UiHud, Msg("Plain", p).ToUpper(), 11, C.TextDim, TextAnchor.MiddleCenter, "0 0", "0 1", "8 4", "66 -4", bold: true);
             else Icon(c, UiHud, ItemIdFor(kind), skin, "0 0", "0 1", "8 4", "66 -4");
             Label(c, UiHud, Msg(kind.ToString(), p).ToUpper(), 10, C.Accent, TextAnchor.UpperLeft, "0 0", "1 1", "74 0", "-6 -6", bold: true);
-            Label(c, UiHud, Trim(NameOf(p, skin, kind), 24), 13, C.Text, TextAnchor.MiddleLeft, "0 0", "1 1", "74 0", "-6 0", bold: true);
-            Label(c, UiHud, Msg("HudKeys", p, ComboName(config.Hotkeys.Next), ComboName(config.Hotkeys.Copy), ComboName(config.Hotkeys.Strip)), 9, C.TextDim, TextAnchor.LowerLeft, "0 0", "1 1", "74 6", "-6 0");
+            Label(c, UiHud, Trim(NameOf(p, skin, kind), 24), 13, C.Text, TextAnchor.MiddleLeft, "0 0", "1 1", "74 22", "-6 -10", bold: true);
+            Label(c, UiHud, KeyList(p, true), 9, C.TextDim, TextAnchor.LowerLeft, "0 0", "1 1", "74 5", "-6 0");
             CuiHelper.AddUi(p, c);
         }
 
@@ -1098,6 +1140,8 @@ namespace Oxide.Plugins
                 string why = s.Tab == "favs" ? Msg("EmptyFavs", p) : s.Tab == "recent" ? Msg("EmptyRecent", p) : s.Tab == "mine" ? Msg("EmptyMine", p) : !string.IsNullOrEmpty(s.Search) ? Msg("EmptySearch", p, s.Search) : Msg("EmptyAll", p);
                 Label(c, UiGrid, why, 15, C.TextDim, TextAnchor.MiddleCenter, "0 0.1", "1 0.9");
             }
+            else if (items.Count == 0)   // only the Plain tile: say where to get some instead of looking broken
+                Label(c, UiGrid, Msg("EmptyAllHint", p, Msg(s.Kind.ToString(), p).ToLower()), 14, C.TextDim, TextAnchor.MiddleCenter, "0 0.05", "1 0.5");
 
             ulong current = tool != null ? ToolSkin(tool, s.Kind) : 0;
             var page = entries.Skip(s.Page * per).Take(per).ToList();
@@ -1201,7 +1245,7 @@ namespace Oxide.Plugins
             {
                 Msg("HelpOpen", p, open, ChatCmd),
                 Msg("HelpPick", p),
-                cycleEnabled ? Msg("HelpHotkeys", p, ComboName(hk.Next), ComboName(hk.Copy), ComboName(hk.Strip)) : Msg("HelpHotkeysOff", p),
+                cycleEnabled ? HelpHotkeys(p) : Msg("HelpHotkeysOff", p),
                 Msg(AutoSwitchOn(p) ? "HelpAutoOn" : "HelpAutoOff", p, ChatCmd),
                 Msg("HelpHud", p, ChatCmd),
             };
@@ -1394,7 +1438,7 @@ namespace Oxide.Plugins
             }
             else
             {
-                Label(c, UiSide, Msg("Tips", p, ComboName(config.Hotkeys.Next), ComboName(config.Hotkeys.Copy), ComboName(config.Hotkeys.Strip), ChatCmd), 11, C.TextDim, TextAnchor.LowerLeft, "0 0", "1 0", $"16 {y}", $"-16 {y + 76}");
+                Label(c, UiSide, Msg("Tips", p, KeyList(p, false), ChatCmd), 11, C.TextDim, TextAnchor.LowerLeft, "0 0", "1 0", $"16 {y}", $"-16 {y + 76}");
             }
         }
 
@@ -1729,6 +1773,8 @@ namespace Oxide.Plugins
             {
                 case "copy": Eyedropper(player); return;
                 case "strip": StripOne(player); return;
+                case "next": Cycle(player, false); return;
+                case "prev": Cycle(player, true); return;
                 case "auto":
                     Info(player.userID).AutoSwitch = !AutoSwitchOn(player); playersDirty = true;
                     Toast(player, AutoSwitchOn(player) ? Msg("AutoOn", player) : Msg("AutoOff", player)); return;
@@ -2661,7 +2707,7 @@ namespace Oxide.Plugins
         {
             lang.RegisterMessages(new Dictionary<string, string>
             {
-                ["Hint"] = "Wallpaper Studio: {0} = menu · {1} = next · {2} = copy · {3} = strip · Help tab in the menu",
+                ["Hint"] = "Wallpaper Studio: {0} menu · {1} · Help tab in the menu",
                 ["NoPerm"] = "You don't have permission to do that",
                 ["HoldTool"] = "Hold the Wallpaper Tool first",
                 ["NotAllowed"] = "That wallpaper isn't available to you",
@@ -2692,6 +2738,7 @@ namespace Oxide.Plugins
                 ["EmptyMine"] = "You haven't added any wallpapers yet.",
                 ["EmptySearch"] = "Nothing matches \"{0}\"",
                 ["EmptyAll"] = "No wallpapers for this surface yet.",
+                ["EmptyAllHint"] = "No {0} wallpapers on this server yet.\nFind some in the <b>Steam Workshop</b> tab, or paste a link in <b>My Wallpapers</b>.",
                 ["CollectionsHelp"] = "Collections are set up by the server admins. Click one to browse it.",
                 ["NoCollections"] = "No collections for this surface yet.",
                 ["ThemesHelp"] = "A room set is a matching wall + floor + ceiling. Click one to load all three into your tool, then use BULK › ALL 3 to do a whole room at once.",
@@ -2728,7 +2775,7 @@ namespace Oxide.Plugins
                 ["UpdateInstalling"] = "Installing Wallpaper Studio v{0}; it reloads in a moment",
                 ["MatureWarnAdmin"] = "Heads up: Steam flags \"{0}\" as mature, so most players won't see it",
                 ["Selected"] = "In your tool: {0}", ["Selected1"] = "Selected: {0}",
-                ["Tips"] = "Holding the tool:  {0} next  ·  {1} copy  ·  {2} strip\nOwn keys: F1 → <color=#c8e6a0>bind q wpstudio.ui toggle</color>\nEverything else: the <b>Help</b> tab or /{3} help",
+                ["Tips"] = "Holding the tool:  {0}\nOwn keys: F1 → <color=#c8e6a0>bind x wpstudio.ui strip</color>\nEverything else: the <b>Help</b> tab or /{1} help",
                 ["TabHelp"] = "Help",
                 ["TabBrowse"] = "Steam Workshop",
                 ["HelpBrowse"] = "<color=#8cc63f><b>BROWSE WORKSHOP</b></color>\nSearch the Steam Workshop without leaving the game: pick a surface, type in the search box, sort by trending, top rated, most used or newest, then click a result to preview it and add it.",
@@ -2751,7 +2798,6 @@ namespace Oxide.Plugins
                 ["HelpNoKey"] = "(no key on this server)",
                 ["HelpOpen"] = "<color=#8cc63f><b>OPENING AND CLOSING</b></color>\nHold the Wallpaper Tool and press <b>{0}</b>, or type <b>/{1}</b>. Close it with ✕ or by clicking outside it. Rust doesn't send keys to the server while a menu is open, so to close it with a key, bind one yourself (see Key binds).",
                 ["HelpPick"] = "<color=#8cc63f><b>PICKING</b></color>\nClick a wallpaper to load it into your tool, then place it as normal. WALL / FLOOR / CEILING switches the surface. ★ adds a favourite. <b>Plain</b> sets the tool back to Rust's standard wallpaper. Search covers names, tags and collections (press Enter). Your view (grid or list, icon size) is in Settings.",
-                ["HelpHotkeys"] = "<color=#8cc63f><b>HOTKEYS (while holding the tool)</b></color>\n<b>{0}</b>: next favourite (or recent if you have none)\n<b>{1}</b>: copy the wallpaper you're looking at\n<b>{2}</b>: strip the surface you're looking at (cloth back)",
                 ["HelpHotkeysOff"] = "<color=#8cc63f><b>HOTKEYS</b></color>\nTurned off on this server. Use the buttons, chat commands or your own binds.",
                 ["HelpAutoOn"] = "<color=#8cc63f><b>AUTO SURFACE: ON</b></color>\nThe tool switches to wall, floor or ceiling to match what you aim at. Turn it off in Settings or with /{0} auto.",
                 ["HelpAutoOff"] = "<color=#8cc63f><b>AUTO SURFACE: OFF</b></color>\nSwitch surfaces yourself, or turn it on in Settings or with /{0} auto.",
@@ -2764,7 +2810,12 @@ namespace Oxide.Plugins
                 ["HelpSubmit"] = "<color=#8cc63f><b>MY WALLPAPERS</b></color>\nAdd Steam Workshop wallpapers of your own (up to {1}): open My Wallpapers, paste a Workshop link or ID into the box and press Enter. Or use chat: /{0} add <link> [wall|floor|ceiling].",
                 ["HelpTeam"] = "Your team can use each other's too.",
                 ["HelpBinds"] = "<color=#8cc63f><b>KEY BINDS (any key, set once in F1)</b></color>\nbind q wpstudio.ui toggle   <color=#9aa0a0>open/close</color>\nbind c wpstudio.ui copy   <color=#9aa0a0>copy</color>\nbind x wpstudio.ui strip   <color=#9aa0a0>strip</color>\nbind z \"wpstudio.ui undo 1\"   <color=#9aa0a0>undo</color>\nbind v wpstudio.ui next   <color=#9aa0a0>next</color>   ·   bind n wpstudio.ui bulk   <color=#9aa0a0>bulk</color>",
-                ["HudKeys"] = "{0} next · {1} copy · {2} strip",
+                ["KeyNext"] = "next", ["KeyPrev"] = "prev", ["KeyCopy"] = "copy", ["KeyStrip"] = "strip",
+                ["HelpHotkeysTitle"] = "<color=#8cc63f><b>HOTKEYS (while holding the tool)</b></color>",
+                ["HelpKeyNext"] = "next favourite (or recent if you have none)", ["HelpKeyPrev"] = "previous favourite / recent",
+                ["HelpKeyCopy"] = "copy the wallpaper you're looking at", ["HelpKeyStrip"] = "strip the surface you're looking at (cloth back)",
+                ["HelpNoKeyNext"] = "Next: /{0} next or an F1 bind", ["HelpNoKeyPrev"] = "Previous: /{0} prev or an F1 bind",
+                ["HelpNoKeyCopy"] = "Copy: /{0} copy or an F1 bind", ["HelpNoKeyStrip"] = "Strip: /{0} strip, or F1: bind x wpstudio.ui strip (BULK › STRIP does a whole room)",
                 ["Binds"] = "Key binds (F1 console, any key): bind q wpstudio.ui toggle | bind c wpstudio.ui copy | bind x wpstudio.ui strip | bind z \"wpstudio.ui undo 1\" | bind v wpstudio.ui next | bind b wpstudio.ui prev | bind n wpstudio.ui bulk",
                 ["AutoOn"] = "AUTO SURFACE: ON", ["AutoOff"] = "AUTO SURFACE: OFF",
                 ["ColName"] = "NAME", ["ColCollection"] = "COLLECTION · TAGS", ["ColFav"] = "★",
