@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.14.1
+- Fix: on servers upgraded from 1.13, the menu wouldn't open ("FormatException" in the console). Oxide
+  keeps the old text of a message when the plugin updates, and the 1.13 tips text expected more values
+  than 1.14 passes. The changed messages have new names so the new text is used, and a message that
+  doesn't fit (stale or hand-edited) now falls back to the built-in text with one console warning
+  instead of breaking the menu.
+
 ## 1.14.0
 - Hotkeys moved off R, which the game's wallpaper tool uses to rotate (e.g. turning a carpet).
   Next is now **E**, copy is **Shift+middle mouse**. Configs still on the old R / Shift+R defaults are

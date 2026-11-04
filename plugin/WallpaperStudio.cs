@@ -16,7 +16,7 @@ using HarmonyLib;
 
 namespace Oxide.Plugins
 {
-    [Info("Wallpaper Studio", "Marleybop", "1.14.0")]
+    [Info("Wallpaper Studio", "Marleybop", "1.14.1")]
     [Description("Fast wallpaper picker: search, collections, favourites, themes, list/grid views, eyedropper, bulk paint/strip with undo, and player-submitted Workshop wallpapers.")]
     public class WallpaperStudio : RustPlugin
     {
@@ -466,7 +466,7 @@ namespace Oxide.Plugins
                 var info = Info(player.userID);
                 if (!info.HintShown && openEnabled)
                 {
-                    Toast(player, Msg("Hint", player, openEnabled ? KeyName(config.OpenButton) : "/" + ChatCmd, KeyList(player, false)));
+                    Toast(player, Msg("HintKeys", player, openEnabled ? KeyName(config.OpenButton) : "/" + ChatCmd, KeyList(player, false)));
                     info.HintShown = true; playersDirty = true;
                 }
             }
@@ -1438,7 +1438,7 @@ namespace Oxide.Plugins
             }
             else
             {
-                Label(c, UiSide, Msg("Tips", p, KeyList(p, false), ChatCmd), 11, C.TextDim, TextAnchor.LowerLeft, "0 0", "1 0", $"16 {y}", $"-16 {y + 76}");
+                Label(c, UiSide, Msg("TipsKeys", p, KeyList(p, false), ChatCmd), 11, C.TextDim, TextAnchor.LowerLeft, "0 0", "1 0", $"16 {y}", $"-16 {y + 76}");
             }
         }
 
@@ -2697,17 +2697,30 @@ namespace Oxide.Plugins
             if (p != null && p.IsConnected) p.ShowToast(GameTip.Styles.Blue_Normal, text, false);
         }
 
+        private readonly HashSet<string> badLangKeys = new HashSet<string>();
+
+        // Oxide keeps a server's existing lang strings when the plugin updates, so a stale or hand-edited
+        // string can have placeholders the code no longer passes. Fall back to the built-in text instead
+        // of throwing (which stops the menu opening).
         private string Msg(string key, BasePlayer p, params object[] args)
         {
             var s = lang.GetMessage(key, this, p?.UserIDString);
-            return args.Length > 0 ? string.Format(s, args) : s;
+            if (args.Length == 0) return s;
+            try { return string.Format(s, args); }
+            catch (FormatException)
+            {
+                string def;
+                if (!DefaultMessages.TryGetValue(key, out def)) return s;
+                if (badLangKeys.Add(key)) PrintWarning($"Lang string '{key}' doesn't fit this version; using the built-in text. Delete it from oxide/lang to clear this.");
+                try { return string.Format(def, args); } catch (FormatException) { return def; }
+            }
         }
 
-        protected override void LoadDefaultMessages()
+        protected override void LoadDefaultMessages() => lang.RegisterMessages(DefaultMessages, this);
+
+        private static readonly Dictionary<string, string> DefaultMessages = new Dictionary<string, string>
         {
-            lang.RegisterMessages(new Dictionary<string, string>
-            {
-                ["Hint"] = "Wallpaper Studio: {0} menu · {1} · Help tab in the menu",
+                ["HintKeys"] = "Wallpaper Studio: {0} menu · {1} · Help tab in the menu",
                 ["NoPerm"] = "You don't have permission to do that",
                 ["HoldTool"] = "Hold the Wallpaper Tool first",
                 ["NotAllowed"] = "That wallpaper isn't available to you",
@@ -2775,7 +2788,7 @@ namespace Oxide.Plugins
                 ["UpdateInstalling"] = "Installing Wallpaper Studio v{0}; it reloads in a moment",
                 ["MatureWarnAdmin"] = "Heads up: Steam flags \"{0}\" as mature, so most players won't see it",
                 ["Selected"] = "In your tool: {0}", ["Selected1"] = "Selected: {0}",
-                ["Tips"] = "Holding the tool:  {0}\nOwn keys: F1 → <color=#c8e6a0>bind x wpstudio.ui strip</color>\nEverything else: the <b>Help</b> tab or /{1} help",
+                ["TipsKeys"] = "Holding the tool:  {0}\nOwn keys: F1 → <color=#c8e6a0>bind x wpstudio.ui strip</color>\nEverything else: the <b>Help</b> tab or /{1} help",
                 ["TabHelp"] = "Help",
                 ["TabBrowse"] = "Steam Workshop",
                 ["HelpBrowse"] = "<color=#8cc63f><b>BROWSE WORKSHOP</b></color>\nSearch the Steam Workshop without leaving the game: pick a surface, type in the search box, sort by trending, top rated, most used or newest, then click a result to preview it and add it.",
@@ -2858,8 +2871,7 @@ namespace Oxide.Plugins
                 ["UndoSkipped"] = "({0} skipped: changed or destroyed since)",
                 ["Cycled"] = "{0}  ({1}/{2} {3})", ["CycleEmpty"] = "Star some {0} wallpapers to cycle through them with {1}",
                 ["Usage"] = "/{0}: menu · /{0} add <link> [wall|floor|ceiling] · /{0} set <name> · /{0} copy · /{0} strip · /{0} bulk · /{0} undo [n|all] · /{0} auto · /{0} hud",
-            }, this);
-        }
+        };
 
         #endregion
     }
