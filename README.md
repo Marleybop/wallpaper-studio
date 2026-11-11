@@ -98,7 +98,8 @@ The menu's **Help** tab explains everything with your server's real keys and set
 - **Bulk:** **BULK: PAINT / STRIP A ROOM** in the side panel does a whole level or building, and shows
   the cost first.
 - **Undo:** **UNDO 1 / 5 / ALL** in the side panel, or `/wp undo`.
-- **Your own wallpapers:** **My Wallpapers** tab → paste a Workshop link → Enter. To make one yourself,
+- **Your own wallpapers:** **My Wallpapers** tab → paste a Workshop link → Enter. To take one off your
+  list, press the red **✕** in its top-left corner (or **REMOVE** in list view). To make one yourself,
   see [docs/MAKING-WALLPAPERS.md](docs/MAKING-WALLPAPERS.md).
 - **Settings:** grid or list view, icon size, auto surface, hotbar picture. They're saved for you.
 
@@ -122,6 +123,7 @@ and type a bind once:
 | Command | Does |
 |---|---|
 | `wpstudio.add <link> wall` | Add a wallpaper for everyone (`floor` / `ceiling` for those; add a collection name after it if you like) |
+| `wpstudio.remove <link>` | Take a wallpaper off the server list (the same as **REMOVE FROM SERVER** in the menu) |
 | `wpstudio.importlist` | Add many at once from `oxide/data/WallpaperStudio/import.json` (format below) |
 | `wpstudio.export` | Save every wallpaper and server room set to `oxide/data/WallpaperStudio/export.json` |
 | `wpstudio.update` | Check for a newer version (`wpstudio.update install` installs it) |

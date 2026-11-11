@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.14.2
+- Fix: in **My Wallpapers** grid view the REMOVE button overlapped the favourite star on narrow tiles.
+  It's now a red ✕ the size of the star in the opposite corner. In list view the tags text stops before
+  REMOVE.
+- New console command `wpstudio.remove <id or link>` takes a wallpaper off the server list. The
+  uploader uses it so deleting a Workshop item doesn't leave a dead ID on the server.
+
 ## Uploader 1.0.0
 - New **Wallpaper Studio Uploader** (`uploader/`, released separately as `uploader-v1.0.0`): a Windows
   app that turns any image into a wallpaper (wall, floor, ceiling) or spray can decal and uploads it to

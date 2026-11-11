@@ -16,7 +16,7 @@ using HarmonyLib;
 
 namespace Oxide.Plugins
 {
-    [Info("Wallpaper Studio", "Marleybop", "1.14.1")]
+    [Info("Wallpaper Studio", "Marleybop", "1.14.2")]
     [Description("Fast wallpaper picker: search, collections, favourites, themes, list/grid views, eyedropper, bulk paint/strip with undo, and player-submitted Workshop wallpapers.")]
     public class WallpaperStudio : RustPlugin
     {
@@ -1189,7 +1189,12 @@ namespace Oxide.Plugins
                 if (sub != null && (sub.Status == "denied" || sub.Status == "mature"))
                     Label(c, parent, Msg(sub.Status == "mature" ? "MatureBadge" : "NotRustBadge", p), 11, C.Danger, TextAnchor.MiddleCenter, "0 0.5", "1 0.62", bold: true);
                 bool listRow = favAnchor == "1 0.5";
-                Button(c, parent, $"{Cmd} unsubmit {w.Id}", "0.62 0.18 0.15 0.95", listRow ? "1 0.5" : "0 1", listRow ? "1 0.5" : "0 1", Msg("RemoveShort", p), 10, C.Text, listRow ? "-122 -11" : "4 -24", listRow ? "-44 11" : "76 -4");
+                // List rows have room for the word; grid tiles get a ✕ the size of the star, in the opposite
+                // corner, so the two never overlap however many columns there are.
+                if (listRow)
+                    Button(c, parent, $"{Cmd} unsubmit {w.Id}", "0.62 0.18 0.15 0.95", "1 0.5", "1 0.5", Msg("RemoveShort", p), 10, C.Text, "-122 -11", "-44 11");
+                else
+                    Button(c, parent, $"{Cmd} unsubmit {w.Id}", "0.62 0.18 0.15 0.95", gearAnchor, gearAnchor, "✕", 13, C.Text, gearOff0, gearOff1);
             }
         }
 
@@ -1226,7 +1231,7 @@ namespace Oxide.Plugins
             if (w != null) Icon(c, row, ItemIdFor(s.Kind), id, "0 0", "0 1", "6 3", "54 -3");
             Label(c, row, w == null ? Msg("Plain", p) : w.Name, 14, C.Text, TextAnchor.MiddleLeft, "0 0", "0.6 1", "64 0", "0 0", bold: selected);
             string meta = w == null ? Msg("PlainHelp", p) : (w.Collection + (w.Tags.Count > 0 ? "  ·  " + string.Join(", ", w.Tags) : ""));
-            Label(c, row, meta, 12, C.TextDim, TextAnchor.MiddleLeft, "0.6 0", "1 1", "0 0", "-80 0");
+            Label(c, row, meta, 12, C.TextDim, TextAnchor.MiddleLeft, "0.6 0", "1 1", "0 0", s.Tab == "mine" ? "-130 0" : "-80 0");   // clear of REMOVE in My Wallpapers
             Button(c, row, $"{Cmd} apply {id}", "0 0 0 0", "0 0", "1 1");
             TileExtras(c, p, s, w, row, "1 0.5", "-38 -14", "-10 14", "1 0.5", "-66 -12", "-42 12");
         }
@@ -1905,6 +1910,20 @@ namespace Oxide.Plugins
         // Bulk import from a plain list: oxide/data/WallpaperStudio/<file>.json
         // [ { "Id": 123, "Name": "Brick", "Kind": "Wall", "Collection": "Starter", "Tags": ["red"] }, ... ]
         // Kind is Wall, Floor or Ceiling (or 1/2/3). Existing IDs are skipped.
+        [ConsoleCommand("wpstudio.remove")]
+        private void RemoveCommand(ConsoleSystem.Arg arg)
+        {
+            var p = arg.Player();
+            if (arg.Connection != null && (p == null || !IsAdmin(p))) return;
+            if (!arg.HasArgs()) { arg.ReplyWith("wpstudio.remove <id or link>"); return; }
+            ulong id;
+            if (!ParseId(arg.GetString(0), out id)) { arg.ReplyWith("Not a Workshop ID or link"); return; }
+            string name = byId.ContainsKey(id) ? byId[id].Name : id.ToString();
+            if (catalogue.Items.RemoveAll(w => w.Id == id) == 0) { arg.ReplyWith($"{id} isn't listed"); return; }
+            catalogueDirty = true; RebuildIndex();
+            arg.ReplyWith($"Removed {id} ({name})");
+        }
+
         [ConsoleCommand("wpstudio.importlist")]
         private void ImportListCommand(ConsoleSystem.Arg arg)
         {
