@@ -166,6 +166,8 @@ the browser and refused when pasted.
 - [CHANGELOG.md](CHANGELOG.md): what changed in each version. The version also shows next to the menu
   title.
 - [docs/MAKING-WALLPAPERS.md](docs/MAKING-WALLPAPERS.md): making and uploading your own wallpaper.
+- [uploader/README.md](uploader/README.md): **Wallpaper Studio Uploader**, a Windows app that turns an
+  image into a wallpaper or spray, uploads it to the Workshop and can add it to your server over RCON.
 - [docs/DESIGN.md](docs/DESIGN.md): how it works, for developers. `tools/deploy-test.sh` copies the
   plugin to a local test server (set `RUST_TEST_SERVER` to its folder).
 

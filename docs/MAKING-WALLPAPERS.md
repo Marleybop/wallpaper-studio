@@ -21,6 +21,19 @@ Tips:
   many servers don't allow it.
 
 ## Upload it
+There are two ways. The **uploader app** is easier: it makes the normal, gloss and occlusion maps from
+your image for you.
+
+### Way 1: Wallpaper Studio Uploader (easiest)
+1. Download it from the [Releases page](https://github.com/Marleybop/wallpaper-studio/releases) (see
+   [uploader/README.md](../uploader/README.md)), start Steam, then open `WallpaperStudioUploader.exe`.
+2. Drop your image on the preview, click **Wall**, **Floor** or **Ceiling**, and check the title.
+3. Click **Upload to Workshop**, then **Upload**.
+4. The new Workshop ID is copied to your clipboard. Carry on at **Use it in game** below.
+
+The app also makes **spray can decals**.
+
+### Way 2: Rust's Workshop editor
 1. Start Rust and open the **Workshop** skin editor from the main menu.
 2. Pick the item type: **Wallpaper Wall**, **Wallpaper Flooring** or **Wallpaper Ceiling**.
    - Pick the right one. A wall wallpaper only works on walls.

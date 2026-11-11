@@ -1,5 +1,12 @@
 # Changelog
 
+## Uploader 1.0.0
+- New **Wallpaper Studio Uploader** (`uploader/`, released separately as `uploader-v1.0.0`): a Windows
+  app that turns any image into a wallpaper (wall, floor, ceiling) or spray can decal and uploads it to
+  the Steam Workshop. Images can come from a file, an image link or web page link, a browser drag, or
+  Ctrl+V. Live preview, repeat / shine / surface-depth controls, updates to items you already uploaded,
+  and optional RCON add to the server. Self-contained, no install. The plugin is unchanged.
+
 ## 1.14.1
 - Fix: on servers upgraded from 1.13, the menu wouldn't open ("FormatException" in the console). Oxide
   keeps the old text of a message when the plugin updates, and the 1.13 tips text expected more values
