@@ -68,9 +68,15 @@ public static class ItemBuilder
 
     public static void Build(string imagePath, string outDir, BuildOptions o, Action<string>? log = null)
     {
+        using var src = LoadImage(imagePath);
+        Build(src, outDir, o, log);
+    }
+
+    /// Builds from an image already prepared by the editor (square, at the final size).
+    public static void Build(Bitmap src, string outDir, BuildOptions o, Action<string>? log = null)
+    {
         Directory.CreateDirectory(outDir);
         foreach (var f in Outputs) { var p = Path.Combine(outDir, f); if (File.Exists(p)) File.Delete(p); }
-        using var src = LoadImage(imagePath);
         if (o.Kind == ItemKind.Spray) BuildSpray(src, outDir, o, log);
         else BuildWallpaper(src, outDir, o, log);
     }

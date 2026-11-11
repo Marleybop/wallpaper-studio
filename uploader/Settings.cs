@@ -17,6 +17,8 @@ public sealed class Settings
     public Visibility Visibility { get; set; } = Visibility.Hidden;
     public int Size { get; set; } = 2048;
     public string LastImageFolder { get; set; } = "";
+    public string Theme { get; set; } = "system";   // "system" (follow Windows; dark if unknown), "dark", "light"
+    public bool HasServer => !string.IsNullOrEmpty(RconPasswordProtected);
 
     static string Dir => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "WallpaperStudioUploader");
     static string FilePath => Path.Combine(Dir, "settings.json");

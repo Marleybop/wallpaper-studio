@@ -23,10 +23,42 @@ static class Program
             AttachConsole(-1);
             return UploadCli(args);
         }
+        // AI upscale one image 4×: WallpaperStudioUploader --upscale <in> <out.png>   (downloads Real-ESRGAN on first use)
+        if (args.Length > 2 && args[0] == "--upscale")
+        {
+            AttachConsole(-1);
+            try
+            {
+                if (!Upscaler.Installed) { Console.WriteLine($"downloading Real-ESRGAN ({Upscaler.DownloadSize})…"); Upscaler.InstallAsync(new Progress<float>(), CancellationToken.None).GetAwaiter().GetResult(); }
+                Upscaler.RunAsync(args[1], args[2], new Progress<float>(), CancellationToken.None).GetAwaiter().GetResult();
+                Console.WriteLine("wrote " + args[2]);
+                return 0;
+            }
+            catch (Exception e) { Console.Error.WriteLine("error: " + e.Message); return 1; }
+        }
+        // List your Rust Workshop wallpapers/sprays: WallpaperStudioUploader --list
+        if (args.Length > 0 && args[0] == "--list")
+        {
+            AttachConsole(-1);
+            var err = SteamWorkshop.Connect();
+            if (err != null) { Console.Error.WriteLine("error: " + err); return 1; }
+            try
+            {
+                var list = Library.LoadAsync().GetAwaiter().GetResult();
+                foreach (var i in list) Console.WriteLine($"{i.Id}  {Kinds.ItemType(i.Kind),-18}  {i.Visibility,-11}  {i.Updated:yyyy-MM-dd}  {i.Title}");
+                Console.WriteLine($"{list.Count} item(s)");
+                return 0;
+            }
+            catch (Exception e) { Console.Error.WriteLine("error: " + e.Message); return 1; }
+            finally { SteamWorkshop.Disconnect(); }
+        }
 
         ApplicationConfiguration.Initialize();
+        Theme.LoadFonts();
+        var settings = Settings.Load();
+        Theme.Apply(settings.Theme);
         // An image dropped onto the .exe (or "Open with"), or an image link, opens straight away.
-        Application.Run(new MainForm(args.Length > 0 && (File.Exists(args[0]) || ImageFetcher.IsUrl(args[0], out _)) ? args[0] : null));
+        Application.Run(new MainForm(settings, args.Length > 0 && (File.Exists(args[0]) || ImageFetcher.IsUrl(args[0], out _)) ? args[0] : null));
         return 0;
     }
 

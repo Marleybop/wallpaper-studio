@@ -1,5 +1,17 @@
 # Changelog
 
+## Uploader 2.0.0
+- Redesigned in the Marleybop look, **dark by default** (follows Windows; moon/sun switch; Settings).
+- **Your library:** every wallpaper and spray on your Steam account is listed with thumbnails, filters
+  and search. No more typing IDs.
+- **Edit and re-upload:** click an item, change it, Save. Items made with the app reopen with all your
+  edits; others are downloaded from Steam. Text-only changes don't re-upload the textures.
+- **Image tools:** crop and zoom, brightness/contrast/saturation/warmth/sharpen, AI upscale 4×
+  (Real-ESRGAN, downloaded on first use and checked), seamless tiling with a 3 × 3 check.
+- **Delete** from the Workshop, and optionally from your server (`wpstudio.remove`).
+- Server settings moved into **Settings**; Enter confirms dialogs; Ctrl+N / Ctrl+S.
+- Command line: new `--list` and `--upscale` modes.
+
 ## 1.14.2
 - Fix: in **My Wallpapers** grid view the REMOVE button overlapped the favourite star on narrow tiles.
   It's now a red ✕ the size of the star in the opposite corner. In list view the tags text stops before

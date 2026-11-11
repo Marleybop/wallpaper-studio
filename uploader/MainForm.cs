@@ -1,298 +1,519 @@
 using System.Diagnostics;
-using System.Text.Json;
-using System.Text.RegularExpressions;
-using static WallpaperStudioUploader.ItemBuilder;
-// (Preview, Build and LoadImage come from ItemBuilder)
 
 namespace WallpaperStudioUploader;
 
 public sealed class MainForm : Form
 {
-    readonly Settings settings = Settings.Load();
+    readonly Settings settings;
+
+    // ---- layout ----
+    readonly Surface header = new(Surface.Fill.Surface, AnchorStyles.Bottom);
+    readonly Surface sidebar = new(Surface.Fill.Bg, AnchorStyles.Right);
+    readonly Surface titleBar = new(Surface.Fill.Surface, AnchorStyles.Bottom);
+    readonly Surface content = new(Surface.Fill.Bg);
 
     // header
-    readonly Panel header = new HeaderBar();
-    readonly StatusPill steamPill = new();
+    readonly FlatButton themeButton = new("", ButtonKind.Ghost, 36);
+    readonly FlatButton settingsButton = new("Settings", ButtonKind.Ghost, 36);
+    readonly TextLabel steamLabel = new("Connecting to Steam…", Theme.Body(9.25f), TextRole.Text2) { Align = ContentAlignment.MiddleRight };
 
-    // left column
-    readonly Panel leftScroll = new() { AutoScroll = true, BackColor = Theme.Bg };
-    readonly Stack left = new() { Gap = 12, BackColor = Theme.Bg, Padding = new Padding(0, 0, 10, 16) };
-    readonly Label imageName = new() { AutoSize = false, Font = Theme.Semi, ForeColor = Theme.Text, BackColor = Theme.Panel, AutoEllipsis = true, Text = "No image yet" };
-    readonly Label imageInfo = new() { AutoSize = false, Font = Theme.Small, ForeColor = Theme.Faint, BackColor = Theme.Panel, Text = "Drop one on the preview, or browse" };
-    readonly FlatButton browse = new("Browse…");
-    readonly TypePicker typePicker = new();
-    readonly Hint typeHint = new();
-    readonly Field title = new("Shown on the Workshop page");
-    readonly Field description = new("Optional", multiline: true, height: 70);
-    readonly Segmented visibility = new("Public", "Unlisted", "Friends", "Hidden");
-    readonly Hint visibilityHint = new();
-    readonly Card lookCard = new("Look", 4);
-    readonly Segmented size = new("2048 px  ·  best", "1024 px  ·  smaller");
-    readonly Stepper tile = new("Repeat", 1, 8, 1) { Format = v => v == 1 ? "Off" : $"{v}×{v}" };
+    // sidebar
+    readonly FlatButton newButton = new("+  New wallpaper or spray", ButtonKind.Primary, 44);
+    readonly Field search = new("Search your uploads");
+    readonly Chips chips = new();
+    readonly Surface listHost = new(Surface.Fill.Bg) { AutoScroll = true };
+    readonly TextLabel listNote = new("", Theme.Body(9f), TextRole.Text2) { Wrap = true };
+    readonly FlatButton refreshButton = new("Refresh", ButtonKind.Ghost, 30);
+
+    // title bar
+    readonly TextLabel titleText = new("New item", Theme.Display(16f));
+    readonly TextLabel idChip = new("", Theme.Mono(9f), TextRole.Text2);
+    readonly FlatButton copyId = new("Copy ID");
+    readonly FlatButton copyCmd = new("Copy add command");
+    readonly FlatButton openPage = new("Open Workshop page");
+    readonly FlatButton deleteButton = new("Delete…", ButtonKind.Danger);
+
+    // editor (left)
+    readonly ImageStage stage = new();
+    readonly Segmented tabs = new("Crop", "Adjust", "Look", "Upscale", "Seamless");
+    readonly Surface toolHost = new(Surface.Fill.Bg);
+    readonly FlatButton browse = new("Choose image…");
+    readonly Field linkField = new("…or paste an image link");
+    readonly FlatButton getLink = new("Get");
+
+    // tools
+    readonly CheckRow fitWhole = new("Keep the whole image (no crop)");
+    readonly Slider zoom = new("Zoom", 100, 800, 100) { Format = v => $"{v}%" };
+    readonly FlatButton resetCrop = new("Reset crop", ButtonKind.Ghost, 32);
+    readonly Slider bright = new("Brightness", -100, 100, 0), contrast = new("Contrast", -100, 100, 0),
+        sat = new("Saturation", -100, 100, 0), warm = new("Warmth", -100, 100, 0), sharp = new("Sharpen", 0, 100, 0) { Format = v => v.ToString() };
+    readonly FlatButton resetAdjust = new("Reset", ButtonKind.Ghost, 32);
+    readonly Segmented size = new("2048 px · best", "1024 px · smaller");
+    readonly Slider repeat = new("Repeat", 1, 8, 1) { Format = v => v == 1 ? "Off" : $"{v}×{v}" };
     readonly Slider gloss = new("Shine", 0, 100, 25) { Format = v => v < 15 ? "Matte" : v > 70 ? "Glossy" : $"{v}%" };
     readonly Slider bump = new("Surface depth", 0, 200, 100) { Format = v => v == 0 ? "Flat" : $"{v}%" };
-    readonly Hint lookHint = new();
-    readonly Expander updateExp = new("Update an item you already uploaded", "Change its picture, text or visibility");
-    readonly Card updateCard = new("Update item");
-    readonly Field existingId = new("Workshop ID or link");
-    readonly FlatButton loadExisting = new("Load");
-    readonly FlatButton clearExisting = new("New item instead", ButtonKind.Ghost);
-    readonly Expander serverExp = new("Send to a Wallpaper Studio server", "Optional: add new wallpapers over RCON");
-    readonly Card serverCard = new("Server (RCON)");
-    readonly Field rconHost = new("127.0.0.1");
-    readonly Field rconPort = new("28016");
-    readonly Field rconPassword = new("rcon.password");
-    readonly Field collection = new("Optional, e.g. Brick");
-    readonly Toggle addAfterUpload = new("Add wallpapers to the server after upload");
-    readonly FlatButton addNow = new("Add the current ID now");
+    readonly TextLabel upscaleText = new("", Theme.Body(9.5f), TextRole.Text2) { Wrap = true };
+    readonly FlatButton upscaleButton = new("Upscale 4× with AI", ButtonKind.Secondary, 40);
+    readonly FlatButton undoUpscale = new("Use the original instead", ButtonKind.Ghost, 36);
+    readonly Slider seam = new("Blend edges", 0, 100, 0) { Format = v => v == 0 ? "Off" : $"{v}%" };
+    readonly TextLabel seamText = new("Makes a pattern tile without visible seams by blending its edges. Check the 3 × 3 view: edges should flow into each other.", Theme.Body(9.25f), TextRole.Text2) { Wrap = true };
+    readonly TextLabel lookText = new("", Theme.Body(9.25f), TextRole.Text2) { Wrap = true };
 
-    readonly Field imageUrl = new("…or paste an image link");
-    readonly FlatButton fetchUrl = new("Get");
-
-    // right column
-    readonly PreviewBox preview = new();
-    readonly ResultCard result = new();
-    readonly Panel logPanel = new LogFrame();
-    readonly RichTextBox log = new() { BorderStyle = BorderStyle.None, ReadOnly = true, BackColor = Theme.Input, ForeColor = Theme.Muted, Font = Theme.Mono, DetectUrls = false };
+    // details (right)
+    readonly Segmented kind = new("Wall", "Floor", "Ceiling", "Spray");
+    readonly Field title = new("Shown on the Workshop page");
+    readonly Field description = new("Optional", multiline: true, height: 84);
+    readonly Segmented visibility = new("Public", "Unlisted", "Friends", "Hidden");
+    readonly TextLabel visHint = new("", Theme.Body(9f), TextRole.Text2) { Wrap = true };
+    readonly CheckRow serverCheck = new("Add it to my server when I save");
+    readonly TextLabel status = new("", Theme.Body(9.25f), TextRole.Text2) { Wrap = true };
     readonly ProgressLine progress = new();
-    readonly Label status = new() { AutoSize = false, AutoEllipsis = true, Font = Theme.Base, ForeColor = Theme.Muted, BackColor = Theme.Bg, TextAlign = ContentAlignment.MiddleLeft };
-    readonly FlatButton logButton = new("Show log", ButtonKind.Ghost);
-    readonly FlatButton uploadButton = new("Upload to Workshop", ButtonKind.Primary) { Height = 40 };
+    readonly FlatButton saveButton = new("Save to Workshop", ButtonKind.Primary, 48);
 
-    // state
+    // ---- state ----
+    readonly List<LibItem> items = new();
+    readonly List<ItemRow> rows = new();
+    LibItem? current;                 // null = new item
+    EditState state = new();
+    string savedSnapshot = "";
     string? sourcePath;
-    string? sourceUrl;                // set when the image came from a link
-    Bitmap? previewSource;            // the chosen image, scaled down for fast previews
-    int previewGen;
-    CancellationTokenSource? fetchCts;
-    readonly System.Windows.Forms.Timer previewTimer = new() { Interval = 160 };
-    ulong lastId;
-    bool busy;
+    Bitmap? sourcePreview;
+    int renderGen;
+    bool busy, loading;
+    readonly System.Windows.Forms.Timer renderTimer = new() { Interval = 90 };
 
-    public MainForm(string? initialImage = null)
+    public MainForm(Settings settings, string? initialImage = null)
     {
-        if (initialImage != null)
-            Shown += async (_, _) => { if (ImageFetcher.IsUrl(initialImage, out var u)) await FetchUrl(u); else SetImage(initialImage); };
+        this.settings = settings;
         Text = "Wallpaper Studio Uploader";
-        Icon = Theme.MakeIcon();
-        BackColor = Theme.Bg; ForeColor = Theme.Text; Font = Theme.Base;
-        ClientSize = new Size(1240, 820); MinimumSize = new Size(1000, 700);
+        Icon = Theme.AppIcon();
+        ClientSize = new Size(1320, 860); MinimumSize = new Size(1120, 760);
         StartPosition = FormStartPosition.CenterScreen;
-        DoubleBuffered = true;
+        Font = Theme.Body(); KeyPreview = true; DoubleBuffered = true;
+        BackColor = Theme.P.Bg;
 
-        BuildLeft();
-        BuildRight();
-        header.Controls.Add(steamPill);
-        Controls.AddRange(new Control[] { header, leftScroll, preview, result, logPanel, progress, status, logButton, uploadButton });
-        KeyPreview = true;
-        leftScroll.Controls.Add(left);
-        Theme.DarkScrollbars(leftScroll);
-        Theme.DarkScrollbars(log);
-
-        // restore settings
-        visibility.SelectedIndex = (int)settings.Visibility;
-        size.SelectedIndex = settings.Size == 1024 ? 1 : 0;
-        rconHost.Text = settings.RconHost; rconPort.Text = settings.RconPort.ToString(); rconPassword.Text = settings.RconPassword;
-        collection.Text = settings.Collection; addAfterUpload.Checked = settings.AddToServerAfterUpload;
-        OnKindChanged(); OnVisibilityChanged();
-        steamPill.Set("Connecting to Steam…", false);
-        SetStatus("Pick an image to begin.");
-
+        Build();
         Wire();
-        Shown += (_, _) => { Theme.DarkTitleBar(this); ConnectSteam(); };
-        HandleCreated += (_, _) => Theme.DarkTitleBar(this);
-        FormClosing += (_, _) => { SaveSettings(); SteamWorkshop.Disconnect(); };
-    }
-
-    ItemKind SelectedKind => (ItemKind)typePicker.SelectedIndex;
-
-    // ================= layout =================
-
-    void BuildLeft()
-    {
-        // 1 Image
-        var c1 = new Card("Image", 1);
-        var row = new InlineRow(browse) { Height = 40 };
-        var names = new Panel { BackColor = Theme.Panel };
-        imageName.SetBounds(0, 0, 10, 20); imageInfo.SetBounds(0, 21, 10, 18);
-        imageName.Anchor = imageInfo.Anchor = AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Top;
-        names.Controls.Add(imageName); names.Controls.Add(imageInfo);
-        names.Resize += (_, _) => { imageName.Width = imageInfo.Width = names.Width; };
-        row.Fill = names;
-        c1.Controls.Add(row);
-        c1.Controls.Add(new InlineRow(fetchUrl) { Fill = imageUrl, Height = 36 });
-        c1.Controls.Add(new Hint("A direct image link or a page with one on it (Imgur, ArtStation, Reddit…). Ctrl+V anywhere also pastes a link or a copied image."));
-
-        // 2 Type
-        var c2 = new Card("Type", 2);
-        c2.Controls.Add(typePicker); c2.Controls.Add(typeHint);
-
-        // 3 Details
-        var c3 = new Card("Details", 3);
-        c3.Controls.AddRange(new Control[]
+        Theme.Changed += OnThemeChanged;
+        OnThemeChanged();
+        NewItem(force: true);
+        Shown += async (_, _) =>
         {
-            new Caption("Title"), title, new Caption("Description"), description,
-            new Caption("Visibility on Steam"), visibility, visibilityHint,
-        });
-
-        // 4 Look
-        lookCard.Controls.AddRange(new Control[] { new Caption("Texture size"), size, tile, gloss, bump, lookHint });
-
-        // update existing
-        updateCard.Controls.Add(new InlineRow(loadExisting) { Fill = existingId, Height = 36 });
-        updateCard.Controls.Add(new Hint("Load fills in the details. Choose a new image to replace the picture, or leave it to change only the text or visibility. You can only update items your Steam account owns."));
-        updateCard.Controls.Add(clearExisting);
-        updateExp.Target = updateCard;
-
-        // server
-        var hostRow = new InlineRow(rconPort) { Fill = rconHost, Height = 36, RightWidth = 96 };
-        serverCard.Controls.AddRange(new Control[]
+            Theme.TitleBar(this);
+            await ConnectSteam();
+            if (initialImage != null) { if (ImageFetcher.IsUrl(initialImage, out var u)) await FetchUrl(u); else SetImage(initialImage); }
+        };
+        FormClosing += (sender, e) =>
         {
-            new Caption("Address  ·  RCON port"), hostRow, new Caption("RCON password"), rconPassword,
-            new Caption("Collection"), collection, addAfterUpload, addNow,
-            new Hint("Runs  wpstudio.add <id> <surface>  on the server. Needs rcon.web on (the default). The password is saved encrypted for your Windows account."),
-        });
-        rconPassword.Box.UseSystemPasswordChar = true;
-        serverExp.Target = serverCard;
-
-        left.Controls.AddRange(new Control[] { c1, c2, c3, lookCard, updateExp, updateCard, serverExp, serverCard });
-        updateExp.Open = false; serverExp.Open = false;
+            if (Dirty && !ConfirmDialog.Ask(this, "Close without saving?", Array.Empty<(string, string)>(), "Close", out _,
+                "Your changes to this item haven't been uploaded yet.", ButtonKind.Danger)) { e.Cancel = true; return; }
+            try { settings.Save(); } catch { }
+            SteamWorkshop.Disconnect();
+        };
     }
 
-    void BuildRight()
+    bool Dirty => state.Json() != savedSnapshot && (sourcePath != null || current != null);
+    bool IsSpray => state.Kind == ItemKind.Spray;
+
+    // =============== building the window ===============
+
+    void Build()
     {
-        logPanel.Controls.Add(log);
-        logPanel.Visible = false;
-        uploadButton.Icon = (g, r, c) => Glyphs.Upload(g, r, c, 1.8f);
-        uploadButton.FitWidth();
-        logButton.FitWidth();
-        browse.FitWidth();
+        Controls.AddRange(new Control[] { header, sidebar, titleBar, content });
+        header.Paint += PaintHeader;
+        header.Controls.AddRange(new Control[] { steamLabel, themeButton, settingsButton });
+        themeButton.Width = 40;
+        themeButton.Icon = (g, r, c) => DrawThemeIcon(g, r, c);
+
+        sidebar.Controls.AddRange(new Control[] { newButton, search, chips, listHost, listNote, refreshButton });
+        Theme.Scrollbars(listHost);
+
+        titleBar.Controls.AddRange(new Control[] { titleText, idChip, copyId, copyCmd, openPage, deleteButton });
+        idChip.Paint += (_, e) => { };
+
+        content.Controls.AddRange(new Control[] { stage, tabs, toolHost, browse, linkField, getLink,
+            kind, title, description, visibility, visHint, serverCheck, status, progress, saveButton });
+        foreach (var (text, y) in new[] { ("Type", 0), ("Title", 1), ("Description", 2), ("Visibility on Steam", 3) })
+            content.Controls.Add(new TextLabel(text, Theme.Semi(9.25f), TextRole.Text2) { Name = "cap" + y });
+
+        toolHost.Controls.AddRange(new Control[] { fitWhole, zoom, resetCrop, bright, contrast, sat, warm, sharp, resetAdjust,
+            size, repeat, gloss, bump, lookText, upscaleText, upscaleButton, undoUpscale, seam, seamText });
+        toolHost.Controls.Add(new TextLabel("Texture size", Theme.Semi(9.25f), TextRole.Text2) { Name = "capSize" });
+        toolHost.Controls.Add(new TextLabel("Drag the square on the image to choose which part is used, and scroll to zoom.", Theme.Body(9.25f), TextRole.Text2) { Wrap = true, Name = "cropText" });
+        built = true;
     }
+
+    bool built;
 
     protected override void OnLayout(LayoutEventArgs e)
     {
         base.OnLayout(e);
-        if (header == null) return;
-        int W = ClientSize.Width, H = ClientSize.Height, pad = 20, gap = 20;
-        header.SetBounds(0, 0, W, 68);
-        steamPill.Location = new Point(W - pad - steamPill.Width, (68 - steamPill.Height) / 2);
+        if (!built) return;   // setting the window size lays out before the controls exist
+        int W = ClientSize.Width, H = ClientSize.Height;
+        const int headH = 60, sideW = 330, titleH = 72;
+        header.SetBounds(0, 0, W, headH);
+        settingsButton.Location = new Point(W - 16 - settingsButton.Width, (headH - 36) / 2);
+        themeButton.Location = new Point(settingsButton.Left - 6 - themeButton.Width, settingsButton.Top);
+        int slw = TextRenderer.MeasureText(steamLabel.Text, steamLabel.Font, Size.Empty, TextFormatFlags.NoPadding).Width + 6;
+        steamLabel.SetBounds(themeButton.Left - 18 - slw, 12, slw, 36);
 
-        int leftW = 440, top = 80, scrollW = SystemInformation.VerticalScrollBarWidth + 4;
-        leftScroll.SetBounds(pad, top, leftW + scrollW, H - top - 4);
-        left.Width = leftW;
+        sidebar.SetBounds(0, headH, sideW, H - headH);
+        int sw = sideW - 32;
+        newButton.SetBounds(16, 16, sw, 44);
+        search.SetBounds(16, 70, sw, 40);
+        chips.SetBounds(16, 120, sw, chips.Height);
+        int ly = chips.Bottom + 10;
+        refreshButton.Location = new Point(16, sidebar.Height - 12 - refreshButton.Height);
+        listNote.SetBounds(16, ly, sw, listNote.Height);
+        int listTop = listNote.Visible && listNote.Text.Length > 0 ? listNote.Bottom + 8 : ly;
+        listHost.SetBounds(8, listTop, sideW - 12, refreshButton.Top - 8 - listTop);
+        LayoutRows();
 
-        int rx = pad + leftW + scrollW + gap, rw = W - rx - pad;
+        int mx = sideW, mw = W - sideW;
+        titleBar.SetBounds(mx, headH, mw, titleH);
+        int bx = mw - 24;
+        foreach (var b in new[] { deleteButton, openPage, copyCmd, copyId })
+        {
+            if (!b.Visible) continue;
+            bx -= b.Width; b.Location = new Point(bx, (titleH - b.Height) / 2); bx -= 8;
+        }
+        int room = Math.Max(80, bx - 24 - 12 - (idChip.Text.Length > 0 ? 130 : 0));
+        int tw = Math.Min(room, TextRenderer.MeasureText(titleText.Text, titleText.Font, Size.Empty, TextFormatFlags.NoPadding).Width + 6);
+        titleText.SetBounds(24, 1, tw, titleH - 3);
+        idChip.SetBounds(titleText.Right + 12, (titleH - 26) / 2 + 2, 130, 26);
 
-        int bottom = H - 16;
-        uploadButton.Location = new Point(rx + rw - uploadButton.Width, bottom - uploadButton.Height);
-        logButton.Location = new Point(uploadButton.Left - 8 - logButton.Width, bottom - logButton.Height - 3);
-        status.SetBounds(rx, bottom - 40, logButton.Left - rx - 12, 40);
-        progress.SetBounds(rx, bottom - 52, rw, 4);
-        int y = progress.Top - 12;
-        if (logPanel.Visible) { logPanel.SetBounds(rx, y - 150, rw, 150); y = logPanel.Top - 12; }
-        if (result.Visible) { result.SetBounds(rx, y - 64, rw, 64); y = result.Top - 12; }
-        preview.SetBounds(rx, top, rw, y - top);
+        content.SetBounds(mx, headH + titleH, mw, H - headH - titleH);
+        LayoutContent();
     }
 
-    // ================= events =================
-
-    void Wire()
+    void LayoutContent()
     {
-        browse.Click += (_, _) => ChooseImage();
-        preview.Browse += () => { if (preview.Image == null) ChooseImage(); };
-        preview.FileDropped += SetImage;
-        preview.TextDropped += t => { if (ImageFetcher.IsUrl(t, out var u)) _ = FetchUrl(u); else SetStatus("That isn't an image or a link.", true); };
-        preview.ImageDropped += img => SetImage(ImageFetcher.SaveClipboardImage(img));
-        fetchUrl.Click += async (_, _) =>
-        {
-            if (ImageFetcher.IsUrl(imageUrl.Text, out var u)) await FetchUrl(u);
-            else SetStatus("Paste a link that starts with https://", true);
-        };
-        imageUrl.Box.KeyDown += async (_, e) =>
-        {
-            if (e.KeyCode != Keys.Enter) return;
-            e.SuppressKeyPress = true;
-            if (ImageFetcher.IsUrl(imageUrl.Text, out var u)) await FetchUrl(u);
-        };
-        KeyDown += OnPasteKey;
-        typePicker.Changed += _ => { OnKindChanged(); RequestPreview(); };
-        visibility.Changed += _ => OnVisibilityChanged();
-        tile.Changed += _ => RequestPreview();
-        previewTimer.Tick += (_, _) => { previewTimer.Stop(); RenderPreview(); };
-        uploadButton.Click += async (_, _) => await UploadClicked();
-        loadExisting.Click += async (_, _) => await LoadExisting();
-        clearExisting.Click += (_, _) => { existingId.Text = ""; SetStatus("Next upload creates a new item."); };
-        logButton.Click += (_, _) => { logPanel.Visible = !logPanel.Visible; logButton.Text = logPanel.Visible ? "Hide log" : "Show log"; PerformLayout(); };
-        addNow.Click += async (_, _) =>
-        {
-            ulong id = ParseId(existingId.Text);
-            if (id == 0) id = lastId;
-            if (id == 0) { SetStatus("Enter a Workshop ID under “Update an item”, or upload something first.", true); return; }
-            await AddToServer(id);
-        };
-        result.CopyId.Click += (_, _) => Copy(lastId.ToString(), "ID copied.");
-        result.CopyCommand.Click += (_, _) => Copy(AddCommand(lastId), "Command copied. Paste it into the server console.");
-        result.OpenPage.Click += (_, _) => Process.Start(new ProcessStartInfo($"https://steamcommunity.com/sharedfiles/filedetails/?id={lastId}") { UseShellExecute = true });
-        foreach (var exp in new[] { updateExp, serverExp }) exp.Click += (_, _) => left.PerformLayout();
+        int W = content.Width, H = content.Height, pad = 24;
+        int rightW = Math.Clamp((W - pad * 3) * 38 / 100, 300, 400);
+        int leftW = W - pad * 3 - rightW;
+        int toolH = 196;
+        int stageH = H - pad * 2 - 44 - 12 - toolH - 12 - 48;
+        stage.SetBounds(pad, pad, leftW, Math.Max(200, stageH));
+        int y = stage.Bottom + 12;
+        browse.Location = new Point(pad, y + 2);
+        getLink.Location = new Point(pad + leftW - getLink.Width, y + 2);
+        linkField.SetBounds(browse.Right + 10, y, getLink.Left - 10 - browse.Right - 10, 40);
+        y += 52;
+        tabs.SetBounds(pad, y, leftW, 40);
+        toolHost.SetBounds(pad, tabs.Bottom + 14, leftW, H - pad - tabs.Bottom - 14);
+        LayoutTools();
+
+        int rx = pad * 2 + leftW;
+        int ry = pad;
+        Control Cap(int i) => content.Controls["cap" + i]!;
+        Cap(0).SetBounds(rx, ry, rightW, 20); ry += 24;
+        kind.SetBounds(rx, ry, rightW, 40); ry += 54;
+        Cap(1).SetBounds(rx, ry, rightW, 20); ry += 24;
+        title.SetBounds(rx, ry, rightW, 40); ry += 54;
+        Cap(2).SetBounds(rx, ry, rightW, 20); ry += 24;
+        description.SetBounds(rx, ry, rightW, 84); ry += 98;
+        Cap(3).SetBounds(rx, ry, rightW, 20); ry += 24;
+        visibility.SetBounds(rx, ry, rightW, 40); ry += 46;
+        visHint.SetBounds(rx, ry, rightW, visHint.Height); ry = visHint.Bottom + 12;
+        serverCheck.SetBounds(rx, ry, rightW, 44);
+        saveButton.SetBounds(rx, H - pad - 48, rightW, 48);
+        progress.SetBounds(rx, saveButton.Top - 10, rightW, 3);
+        status.SetBounds(rx, progress.Top - 8 - status.Height, rightW, status.Height);
     }
 
-    void OnKindChanged()
+    void LayoutTools()
     {
-        bool spray = SelectedKind == ItemKind.Spray;
-        typeHint.Text = SelectedKind switch
+        int w = toolHost.Width, half = (w - 24) / 2;
+        foreach (Control c in toolHost.Controls) c.Visible = false;
+        void Show(Control c, int x, int y, int cw = -1, int h = -1) { c.Visible = true; c.SetBounds(x, y, cw < 0 ? c.Width : cw, h < 0 ? c.Height : h); }
+        switch (tabs.SelectedIndex)
         {
-            ItemKind.Wall => "Covers one wall panel. Uses the centre square of your image.",
-            ItemKind.Floor => "Covers one floor tile. Seamless patterns look best, since tiles sit side by side.",
-            ItemKind.Ceiling => "Covers one ceiling tile. Seamless patterns look best.",
-            _ => "A decal for the Spray Can. Keeps the whole image and its transparency, so use a PNG with a clear background.",
-        };
-        tile.Visible = gloss.Visible = bump.Visible = !spray;
-        lookHint.Text = spray ? "Sprays only use the colour of your image. Transparent areas stay clear."
-                              : "Repeat tiles small patterns. Shine and surface depth are made from the image's brightness.";
-        lookCard.Title = spray ? "Size" : "Look";
-        addAfterUpload.Enabled = addNow.Enabled = !spray;
-        lookCard.Invalidate(); left.PerformLayout(); PerformLayout();
+            case 0:
+                if (IsSpray) { Show(fitWhole, 0, 0, w); }
+                if (!(IsSpray && state.FitWhole))
+                {
+                    int y0 = IsSpray ? 56 : 0;
+                    Show(toolHost.Controls["cropText"]!, 0, y0, w);
+                    Show(zoom, 0, y0 + 40, half);
+                    Show(resetCrop, w - resetCrop.Width, y0 + 48);
+                }
+                break;
+            case 1:
+                Show(bright, 0, 0, half); Show(contrast, half + 24, 0, half);
+                Show(sat, 0, 56, half); Show(warm, half + 24, 56, half);
+                Show(sharp, 0, 112, half); Show(resetAdjust, w - resetAdjust.Width, 122);
+                break;
+            case 2:
+                Show(toolHost.Controls["capSize"]!, 0, 0, w, 20); Show(size, 0, 24, w, 38);
+                if (IsSpray) { lookText.Text = "Sprays only use the picture's colours. Transparent areas stay clear."; Show(lookText, 0, 76, w); }
+                else { Show(repeat, 0, 76, half); Show(gloss, half + 24, 76, half); Show(bump, 0, 132, half); }
+                break;
+            case 3:
+                Show(upscaleText, 0, 0, w);
+                Show(upscaleButton, 0, upscaleText.Bottom + 12);
+                if (state.Upscaled) Show(undoUpscale, upscaleButton.Right + 10, upscaleText.Bottom + 14);
+                break;
+            case 4:
+                if (IsSpray) { seamText.Text = "Sprays don't tile, so there's nothing to blend."; Show(seamText, 0, 0, w); }
+                else { seamText.Text = "Makes a pattern tile without visible seams by blending its edges. Check the 3 × 3 view: edges should flow into each other."; Show(seam, 0, 0, half); Show(seamText, 0, 60, w); }
+                break;
+        }
     }
 
-    void OnVisibilityChanged()
+    // =============== painting bits ===============
+
+    void PaintHeader(object? s, PaintEventArgs e)
     {
-        visibilityHint.Text = visibility.SelectedIndex switch
-        {
-            0 => "Anyone can find it on the Workshop.",
-            1 => "Only people with the link can see it on Steam.",
-            2 => "Only your Steam friends can see it on Steam.",
-            _ => "Nobody can browse it, but it still works in game by its ID. Good for server-only wallpapers.",
-        };
-        left.PerformLayout();
+        var g = e.Graphics; Theme.Hq(g);
+        Theme.UploaderIcon(g, new RectangleF(18, 15, 30, 30), Theme.P.Dark);
+        TextRenderer.DrawText(g, "Wallpaper Studio Uploader", Theme.Display(13.5f), new Point(58, 17), Theme.P.Text, TextFormatFlags.NoPadding);
+        var w = TextRenderer.MeasureText("Wallpaper Studio Uploader", Theme.Display(13.5f), Size.Empty, TextFormatFlags.NoPadding).Width;
+        TextRenderer.DrawText(g, "by Marleybop", Theme.Body(9.25f), new Point(58 + w + 10, 22), Theme.P.Text2, TextFormatFlags.NoPadding);
+        // Steam dot
+        var dot = new RectangleF(steamLabel.Left - 14, 26, 8, 8);
+        using var b = new SolidBrush(SteamWorkshop.Ready ? Theme.P.Ok : Theme.P.Muted);
+        g.FillEllipse(b, dot);
     }
 
-    // ================= Steam =================
-
-    async void ConnectSteam()
+    static void DrawThemeIcon(Graphics g, RectangleF r, Color c)
     {
-        uploadButton.Enabled = loadExisting.Enabled = false;
-        steamPill.Set("Connecting to Steam…", false); PerformLayout();
-        var err = await Task.Run(SteamWorkshop.Connect);
-        if (err != null)
+        using var pen = new Pen(c, 1.8f);
+        if (Theme.P.Dark)   // dark mode on: a crescent moon
         {
-            steamPill.Set("Steam not connected · click to retry", false);
-            steamPill.Cursor = Cursors.Hand;
-            steamPill.Click -= RetrySteam; steamPill.Click += RetrySteam;
-            SetStatus(err.Split('\n')[0], true); Log(err, true);
+            using var moon = new Region(new RectangleF(r.X + 1, r.Y + 1, r.Width - 2, r.Height - 2).ToPath());
+            moon.Exclude(new RectangleF(r.X + 6, r.Y - 2, r.Width - 3, r.Height - 3).ToPath());
+            using var b = new SolidBrush(c);
+            g.FillRegion(b, moon);
         }
         else
         {
-            steamPill.Set($"Steam · {SteamWorkshop.Name}", true);
-            steamPill.Cursor = Cursors.Default;
-            uploadButton.Enabled = loadExisting.Enabled = !busy;
-            Log($"Connected to Steam as {SteamWorkshop.Name} ({SteamWorkshop.SteamId}).");
+            float cx = r.X + r.Width / 2, cy = r.Y + r.Height / 2;
+            g.DrawEllipse(pen, cx - 4, cy - 4, 8, 8);
+            for (int i = 0; i < 8; i++)
+            {
+                double a = i * Math.PI / 4;
+                g.DrawLine(pen, cx + (float)Math.Cos(a) * 6.5f, cy + (float)Math.Sin(a) * 6.5f, cx + (float)Math.Cos(a) * 8.5f, cy + (float)Math.Sin(a) * 8.5f);
+            }
         }
+    }
+
+    readonly ToolTip tips = new();
+
+    void OnThemeChanged()
+    {
+        tips.SetToolTip(themeButton, Theme.P.Dark ? "Dark mode (click for light)" : "Light mode (click for dark)");
+        BackColor = Theme.P.Bg;
+        Theme.TitleBar(this);
+        Theme.Scrollbars(listHost);
+        Invalidate(true);
+    }
+
+    // =============== events ===============
+    // (ToPath helper for the moon icon is below, in RectExt)
+
+    void Wire()
+    {
+        themeButton.Click += (_, _) =>
+        {
+            settings.Theme = Theme.P.Dark ? "light" : "dark";
+            Theme.Apply(settings.Theme);
+            try { settings.Save(); } catch { }
+        };
+        settingsButton.Click += (_, _) => { using var d = new SettingsDialog(settings); d.ShowDialog(this); UpdateServerCheck(); };
+        newButton.Click += (_, _) => NewItem();
+        refreshButton.Click += async (_, _) => await LoadLibrary();
+        search.Box.TextChanged += (_, _) => RebuildList();
+        chips.Changed += _ => RebuildList();
+
+        copyId.Click += (_, _) => Copy(state.Id.ToString(), "ID copied.");
+        copyCmd.Click += (_, _) => Copy(AddCommand(), "Add command copied. Paste it into the server console, or the Admin tab in game.");
+        openPage.Click += (_, _) => Process.Start(new ProcessStartInfo($"https://steamcommunity.com/sharedfiles/filedetails/?id={state.Id}") { UseShellExecute = true });
+        deleteButton.Click += async (_, _) => await DeleteCurrent();
+
+        stage.FileDropped += SetImage;
+        stage.TextDropped += t => { if (ImageFetcher.IsUrl(t, out var u)) _ = FetchUrl(u); };
+        stage.ImageDropped += img => SetImage(ImageFetcher.SaveClipboardImage(img));
+        stage.Browse += ChooseImage;
+        stage.CropChanged += () => { zoom.SetQuiet((int)(state.Zoom * 100)); RequestRender(); UpdateDirty(); };
+        browse.Click += (_, _) => ChooseImage();
+        getLink.Click += async (_, _) => { if (ImageFetcher.IsUrl(linkField.Text, out var u)) await FetchUrl(u); else SetStatus("Paste a link that starts with https://", TextRole.Error); };
+        linkField.Box.KeyDown += async (_, e) => { if (e.KeyCode == Keys.Enter) { e.SuppressKeyPress = true; if (ImageFetcher.IsUrl(linkField.Text, out var u)) await FetchUrl(u); } };
+
+        tabs.Changed += _ => { UpdateStageMode(); LayoutTools(); };
+        fitWhole.Changed += v => { state.FitWhole = v; UpdateStageMode(); LayoutTools(); RequestRender(); UpdateDirty(); };
+        zoom.Changed += v => { state.Zoom = v / 100f; stage.Invalidate(); RequestRender(); UpdateDirty(); };
+        resetCrop.Click += (_, _) => { state.CropX = state.CropY = 0.5f; state.Zoom = 1; zoom.SetQuiet(100); stage.Invalidate(); RequestRender(); UpdateDirty(); };
+        void Adj(Slider s, Action<int> set) => s.Changed += v => { set(v); RequestRender(); UpdateDirty(); };
+        Adj(bright, v => state.Brightness = v); Adj(contrast, v => state.Contrast = v); Adj(sat, v => state.Saturation = v);
+        Adj(warm, v => state.Warmth = v); Adj(sharp, v => state.Sharpen = v); Adj(seam, v => state.Seamless = v);
+        resetAdjust.Click += (_, _) => { foreach (var s in new[] { bright, contrast, sat, warm, sharp }) s.Value = s.Default; };
+        size.Changed += i => { state.Size = i == 1 ? 1024 : 2048; UpdateDirty(); };
+        repeat.Changed += v => { state.Tile = v; stage.Invalidate(); UpdateDirty(); };
+        gloss.Changed += v => { state.Gloss = v; UpdateDirty(); };
+        bump.Changed += v => { state.Bump = v; UpdateDirty(); };
+        upscaleButton.Click += async (_, _) => await Upscale();
+        undoUpscale.Click += (_, _) => { state.Upscaled = false; ReloadSource(); LayoutTools(); UpdateUpscaleText(); UpdateDirty(); };
+
+        kind.Changed += i => { state.Kind = (ItemKind)i; UpdateKind(); RequestRender(); UpdateDirty(); };
+        title.Box.TextChanged += (_, _) => { state.Title = title.Text; UpdateDirty(); };
+        description.Box.TextChanged += (_, _) => { state.Description = description.Text; UpdateDirty(); };
+        visibility.Changed += i => { state.Visibility = (Visibility)i; UpdateVisHint(); UpdateDirty(); };
+        saveButton.Click += async (_, _) => await Save();
+        renderTimer.Tick += (_, _) => { renderTimer.Stop(); Render(); };
+
+        KeyDown += OnKey;
+    }
+
+    void OnKey(object? s, KeyEventArgs e)
+    {
+        if (e.Control && e.KeyCode == Keys.S) { e.Handled = e.SuppressKeyPress = true; _ = Save(); return; }
+        if (e.Control && e.KeyCode == Keys.N) { e.Handled = e.SuppressKeyPress = true; NewItem(); return; }
+        if (!(e.Control && e.KeyCode == Keys.V)) return;
+        Control? c = ActiveControl;
+        while (c is ContainerControl cc && cc.ActiveControl != null) c = cc.ActiveControl;
+        if (c is TextBoxBase) return;
+        try
+        {
+            if (Clipboard.ContainsFileDropList() && Clipboard.GetFileDropList() is { Count: > 0 } f) { SetImage(f[0]!); e.Handled = true; }
+            else if (Clipboard.ContainsImage() && Clipboard.GetImage() is Image img) { using (img) SetImage(ImageFetcher.SaveClipboardImage(img)); e.Handled = true; }
+            else if (Clipboard.ContainsText() && ImageFetcher.IsUrl(Clipboard.GetText(), out var u)) { _ = FetchUrl(u); e.Handled = true; }
+        }
+        catch (Exception ex) { SetStatus("Couldn't paste that: " + ex.Message, TextRole.Error); }
+    }
+
+    // =============== Steam + library ===============
+
+    async Task ConnectSteam()
+    {
+        steamLabel.Text = "Connecting to Steam…"; header.Invalidate();
+        var err = await Task.Run(SteamWorkshop.Connect);
+        if (err != null)
+        {
+            steamLabel.Text = "Steam not connected";
+            listNote.Text = "Start Steam and log in with the account that owns Rust, then press Refresh.";
+            SetStatus(err.Split('\n')[0], TextRole.Error);
+        }
+        else
+        {
+            steamLabel.Text = "Steam · " + SteamWorkshop.Name;
+            await LoadLibrary();
+        }
+        header.Invalidate(); UpdateButtons(); PerformLayout();
+    }
+
+    async Task LoadLibrary()
+    {
+        if (!SteamWorkshop.Ready) { await ConnectSteam(); return; }
+        listNote.Text = "Loading your Workshop items…"; PerformLayout();
+        try
+        {
+            var list = await Library.LoadAsync();
+            items.Clear(); items.AddRange(list);
+            listNote.Text = items.Count == 0 ? "Nothing here yet. Press New to make your first wallpaper or spray." : "";
+            RebuildList();
+            _ = Library.LoadThumbsAsync(items, it => BeginInvoke(() => rows.FirstOrDefault(r => r.Item == it)?.Invalidate()));
+        }
+        catch (Exception e) { listNote.Text = "Couldn't load your items: " + e.Message; }
         PerformLayout();
     }
 
-    void RetrySteam(object? s, EventArgs e) { if (!SteamWorkshop.Ready) ConnectSteam(); }
+    void RebuildList()
+    {
+        string q = search.Text.Trim();
+        var counts = new[]
+        {
+            ("All", items.Count), ("Walls", items.Count(i => i.Kind == ItemKind.Wall)), ("Floors", items.Count(i => i.Kind == ItemKind.Floor)),
+            ("Ceilings", items.Count(i => i.Kind == ItemKind.Ceiling)), ("Sprays", items.Count(i => i.Kind == ItemKind.Spray)),
+        };
+        chips.SetItems(counts);
+        var shown = items.Where(i => chips.SelectedIndex == 0 || (int)i.Kind == chips.SelectedIndex - 1)
+                         .Where(i => q.Length == 0 || i.Title.Contains(q, StringComparison.OrdinalIgnoreCase) || i.Id.ToString().Contains(q)).ToList();
+        listHost.SuspendLayout();
+        while (rows.Count > shown.Count) { var r = rows[^1]; rows.RemoveAt(rows.Count - 1); listHost.Controls.Remove(r); r.Dispose(); }
+        while (rows.Count < shown.Count)
+        {
+            var r = new ItemRow();
+            r.Click += async (_, _) => { if (r.Item != null) await OpenItem(r.Item); };
+            rows.Add(r); listHost.Controls.Add(r);
+        }
+        for (int i = 0; i < shown.Count; i++) { rows[i].Bind(shown[i]); rows[i].Selected = current != null && shown[i].Id == current.Id; }
+        listHost.ResumeLayout();
+        LayoutRows();
+    }
 
-    // ================= image + preview =================
+    void LayoutRows()
+    {
+        int w = listHost.ClientSize.Width - 8, y = 0;
+        foreach (var r in rows) { r.SetBounds(8, y - listHost.VerticalScroll.Value, w, r.Height); y += r.Height; }
+        listHost.AutoScrollMinSize = new Size(0, y);
+    }
+
+    void MarkSelected() { foreach (var r in rows) { r.Selected = current != null && r.Item?.Id == current.Id; r.Invalidate(); } }
+
+    // =============== open / new ===============
+
+    bool ConfirmDiscard() => !Dirty || ConfirmDialog.Ask(this, "Discard your changes?", Array.Empty<(string, string)>(), "Discard", out _,
+        $"\"{(state.Title.Length > 0 ? state.Title : "This item")}\" has changes that haven't been uploaded.", ButtonKind.Danger);
+
+    void NewItem(bool force = false)
+    {
+        if (!force && !ConfirmDiscard()) return;
+        try { if (Directory.Exists(Library.Folder(0))) Directory.Delete(Library.Folder(0), true); } catch { }
+        current = null;
+        state = new EditState { Kind = chips.SelectedIndex is >= 1 and <= 4 ? (ItemKind)(chips.SelectedIndex - 1) : ItemKind.Wall, Visibility = settings.Visibility, Size = settings.Size };
+        sourcePath = null;
+        SetSourcePreview(null);
+        LoadStateIntoControls();
+        savedSnapshot = state.Json();
+        tabs.SetQuiet(0);
+        SetStatus("Choose an image to start: drop it on the left, browse, paste a link, or Ctrl+V.");
+        MarkSelected(); UpdateButtons(); UpdateStageMode(); PerformLayout();
+    }
+
+    async Task OpenItem(LibItem item)
+    {
+        if (busy || (current?.Id == item.Id)) return;
+        if (!ConfirmDiscard()) return;
+        current = item;
+        var saved = Library.LoadEdit(item.Id);
+        state = saved ?? new EditState { Id = item.Id };
+        state.Id = item.Id; state.Title = item.Title; state.Description = item.Description; state.Kind = item.Kind; state.Visibility = item.Visibility;
+        LoadStateIntoControls();
+        MarkSelected(); UpdateButtons();
+        SetSourcePreview(null);
+        sourcePath = null;
+        SetBusy(true, "Loading…");
+        try
+        {
+            var src = await Library.EnsureSourceAsync(item, new Progress<string>(m => SetStatus(m)));
+            if (current != item) return;
+            if (saved == null) state.SourceFile = Path.GetFileName(src);
+            sourcePath = src;
+            ReloadSource();
+            SetStatus(saved == null ? "Loaded from Steam. Edit anything, then Save to Workshop." : "Loaded with your last edits.");
+        }
+        catch (Exception e) { SetStatus(e.Message, TextRole.Error); }
+        finally { SetBusy(false); savedSnapshot = state.Json(); UpdateDirty(); PerformLayout(); }
+    }
+
+    void LoadStateIntoControls()
+    {
+        loading = true;
+        kind.SetQuiet((int)state.Kind);
+        title.Text = state.Title; description.Text = state.Description;
+        visibility.SetQuiet((int)state.Visibility);
+        fitWhole.SetQuiet(state.FitWhole); zoom.SetQuiet((int)(state.Zoom * 100));
+        bright.SetQuiet(state.Brightness); contrast.SetQuiet(state.Contrast); sat.SetQuiet(state.Saturation);
+        warm.SetQuiet(state.Warmth); sharp.SetQuiet(state.Sharpen); seam.SetQuiet(state.Seamless);
+        size.SetQuiet(state.Size == 1024 ? 1 : 0); repeat.SetQuiet(state.Tile); gloss.SetQuiet(state.Gloss); bump.SetQuiet(state.Bump);
+        loading = false;
+        titleText.Text = current == null ? "New item" : (state.Title.Length > 0 ? state.Title : "Untitled");
+        idChip.Text = current == null ? "" : state.Id.ToString();
+        stage.State = state;
+        UpdateKind(); UpdateVisHint(); UpdateServerCheck(); UpdateUpscaleText();
+    }
+
+    // =============== images ===============
 
     void ChooseImage()
     {
@@ -307,394 +528,310 @@ public sealed class MainForm : Form
 
     void SetImage(string path) => SetImage(path, null);
 
-    void SetImage(string path, string? fromUrl)
+    void SetImage(string path, string? url)
     {
-        Bitmap full;
-        try { full = LoadImage(path); }
-        catch (Exception e) { SetStatus("Couldn't open that image: " + e.Message, true); return; }
-
-        sourcePath = path;
-        sourceUrl = fromUrl;
-        if (fromUrl == null && !path.Contains("WallpaperStudioUploader")) settings.LastImageFolder = Path.GetDirectoryName(path) ?? "";
-        imageName.Text = fromUrl != null ? new Uri(fromUrl).Host + "  ·  " + Path.GetFileName(new Uri(fromUrl).AbsolutePath) : Path.GetFileName(path);
-        bool tiny = Math.Min(full.Width, full.Height) < 512;
-        imageInfo.Text = $"{full.Width} × {full.Height} px" + (tiny ? "  ·  small, will look blurry" : full.Width != full.Height ? "  ·  not square" : "");
-        imageInfo.ForeColor = tiny ? Theme.Warn : Theme.Faint;
-        if (fromUrl == null) imageUrl.Text = "";
-        if (string.IsNullOrWhiteSpace(title.Text) && fromUrl == null) title.Text = Tidy(Path.GetFileNameWithoutExtension(path));
-
-        // keep a smaller copy for live previews
-        float s = Math.Min(1f, 1024f / Math.Max(full.Width, full.Height));
-        var small = s < 1f ? new Bitmap(full, Math.Max(1, (int)(full.Width * s)), Math.Max(1, (int)(full.Height * s))) : full;
-        if (!ReferenceEquals(small, full)) full.Dispose();
-        previewSource?.Dispose(); previewSource = small;
-        result.Visible = false;
-        SetStatus("Image loaded. Adjust the look, then upload.");
-        Log($"Image: {path}");
-        RenderPreview();
+        try { using var test = ImageOps.Load(path); }
+        catch (Exception e) { SetStatus("Couldn't open that image: " + e.Message, TextRole.Error); return; }
+        if (url == null && !path.Contains("WallpaperStudioUploader")) settings.LastImageFolder = Path.GetDirectoryName(path) ?? "";
+        var dest = Library.AdoptSource(state.Id, path);
+        state.SourceFile = Path.GetFileName(dest); state.SourceUrl = url;
+        state.Upscaled = false; state.CropX = state.CropY = 0.5f; state.Zoom = 1;
+        if (state.Title.Length == 0) title.Text = Tidy(Path.GetFileNameWithoutExtension(path));
+        sourcePath = dest;
+        if (url == null) linkField.Text = "";
+        ReloadSource();
+        UpdateUpscaleText(); LayoutTools(); UpdateDirty();
+        SetStatus("Image loaded. Adjust it, then Save to Workshop.");
     }
-
-    void RequestPreview() { if (previewSource != null) { previewTimer.Stop(); previewTimer.Start(); } }
-
-    async void RenderPreview()
-    {
-        if (previewSource == null) return;
-        int gen = ++previewGen;
-        var o = Options();
-        var src = new Bitmap(previewSource);   // the worker gets its own copy
-        Bitmap img;
-        try { img = await Task.Run(() => { using (src) return Preview(src, o); }); }
-        catch (Exception e) { SetStatus("Preview failed: " + e.Message, true); return; }
-        if (gen != previewGen) { img.Dispose(); return; }   // a newer one is on its way
-        preview.Badge = o.Kind switch
-        {
-            ItemKind.Spray => "Spray decal",
-            _ => Kinds.Label(o.Kind).Replace("Wallpaper: ", "") is var s ? char.ToUpper(s[0]) + s[1..] + (o.Tile > 1 ? $"  ·  repeated {o.Tile}×{o.Tile}" : "") : "",
-        };
-        preview.Image = img;
-    }
-
-    // ---- images from links and the clipboard ----
 
     async Task FetchUrl(Uri uri)
     {
-        fetchCts?.Cancel();
-        var cts = fetchCts = new CancellationTokenSource();
-        imageUrl.Text = uri.ToString();
-        fetchUrl.Enabled = false; preview.Busy = true; preview.Invalidate();
-        SetStatus($"Downloading from {uri.Host}…");
+        SetBusy(true, "Downloading…");
         try
         {
-            var (path, name) = await ImageFetcher.Download(uri, cts.Token);
-            if (cts.IsCancellationRequested) return;
-            Log($"Downloaded {uri} → {path}");
-            bool hadTitle = !string.IsNullOrWhiteSpace(title.Text);
+            var (path, name) = await ImageFetcher.Download(uri);
+            bool hadTitle = state.Title.Length > 0;
+            linkField.Text = uri.ToString();
             SetImage(path, uri.ToString());
-            imageName.Text = $"{uri.Host.Replace("www.", "")}  ·  {name}";
             if (!hadTitle) title.Text = Tidy(name);
         }
-        catch (OperationCanceledException) when (!cts.IsCancellationRequested) { SetStatus("The download timed out. Try again, or save the image and drop the file in.", true); }
-        catch (OperationCanceledException) { }
-        catch (Exception e) { SetStatus(e.Message, true); Log($"Download failed: {uri}: {e.Message}", true); }
-        finally { fetchUrl.Enabled = true; preview.Busy = false; preview.Invalidate(); }
-    }
-
-    // Ctrl+V anywhere outside a text box: paste a copied image, a link, or a copied file.
-    void OnPasteKey(object? sender, KeyEventArgs e)
-    {
-        if (!(e.Control && e.KeyCode == Keys.V) || GetFocusedTextBox() != null) return;   // normal paste in text boxes
-        try
-        {
-            if (Clipboard.ContainsFileDropList() && Clipboard.GetFileDropList() is { Count: > 0 } files) { SetImage(files[0]!); e.Handled = true; }
-            else if (Clipboard.ContainsImage() && Clipboard.GetImage() is Image img) { using (img) SetImage(ImageFetcher.SaveClipboardImage(img)); e.Handled = true; }
-            else if (Clipboard.ContainsText() && ImageFetcher.IsUrl(Clipboard.GetText(), out var u)) { _ = FetchUrl(u); e.Handled = true; }
-        }
-        catch (Exception ex) { SetStatus("Couldn't paste that: " + ex.Message, true); }
-    }
-
-    TextBoxBase? GetFocusedTextBox()
-    {
-        Control? c = ActiveControl;
-        while (c is ContainerControl cc && cc.ActiveControl != null) c = cc.ActiveControl;
-        return c as TextBoxBase ?? (c is Field f && f.Box.Focused ? f.Box : null);
-    }
-
-    static string Tidy(string name) => Regex.Replace(name.Replace('_', ' ').Replace('-', ' '), @"\s+", " ").Trim();
-
-    BuildOptions Options() => new()
-    {
-        Kind = SelectedKind,
-        Size = size.SelectedIndex == 1 ? 1024 : 2048,
-        Tile = tile.Value,
-        Gloss = gloss.Value / 100f,
-        Bump = bump.Value / 100f,
-        AuthorId = SteamWorkshop.SteamId,
-    };
-
-    // ================= upload =================
-
-    async Task UploadClicked()
-    {
-        if (busy) return;
-        if (!SteamWorkshop.Ready) { SetStatus("Not connected to Steam. Start Steam, then click the Steam badge to retry.", true); return; }
-        ulong existing = ParseId(existingId.Text);
-        if (!string.IsNullOrWhiteSpace(existingId.Text) && existing == 0) { SetStatus("“Update item” isn't a Workshop ID or link.", true); return; }
-        if (string.IsNullOrWhiteSpace(title.Text)) { SetStatus("Give it a title first.", true); title.Box.Focus(); return; }
-        bool haveImage = sourcePath != null && File.Exists(sourcePath);
-        if (!haveImage && existing == 0) { SetStatus("Choose an image first.", true); return; }
-
-        string what = existing == 0 ? "Create a new Workshop item" : $"Update Workshop item {existing}" + (haveImage ? "" : " (details only, picture unchanged)");
-        string[] visNames = { "Public", "Unlisted", "Friends only", "Hidden" };
-        if (!ConfirmDialog.Ask(this, what, new[]
-            {
-                ("Title", title.Text.Trim()),
-                ("Type", Kinds.ItemType(SelectedKind)),
-                ("Visibility", visNames[visibility.SelectedIndex]),
-                ("Steam account", SteamWorkshop.Name),
-            }, existing == 0 ? "Upload" : "Update"))
-            return;
-
-        SetBusy(true);
-        try
-        {
-            var o = Options();
-            string? folder = null;
-            if (haveImage)
-            {
-                SetStatus("Making textures…"); progress.Value = 0.03f;
-                folder = Path.Combine(Settings.ItemsDir, "_draft", "content");
-                var sw = Stopwatch.StartNew();
-                string srcPath = sourcePath!;
-                await Task.Run(() => Build(srcPath, folder, o, m => Log("  " + m)));
-                Log($"Textures ready in {sw.Elapsed.TotalSeconds:0.0}s.");
-            }
-            progress.Value = 0.15f;
-            SetStatus(existing == 0 ? "Creating the Workshop item and uploading…" : $"Uploading to {existing}…");
-            var prog = new Progress<float>(p => progress.Value = 0.15f + 0.85f * p);
-            var res = await SteamWorkshop.Upload(new UploadRequest
-            {
-                ExistingId = existing,
-                Title = title.Text.Trim(),
-                Description = description.Text.Trim(),
-                Kind = SelectedKind,
-                Visibility = (Visibility)visibility.SelectedIndex,
-                ContentFolder = folder,
-            }, prog);
-
-            if (res.NeedsAgreement)
-                Log("Steam needs you to accept the Workshop legal agreement once. Open the Workshop page and accept it; then the item can be used.", true);
-            if (!res.Ok)
-            {
-                progress.Value = 0;
-                SetStatus(res.Message, true); Log(res.Message, true);
-                if (res.Id != 0) lastId = res.Id;
-                return;
-            }
-
-            progress.Value = 1;
-            lastId = res.Id;
-            if (folder != null) KeepCopy(res.Id, folder);
-            existingId.Text = res.Id.ToString();
-            bool wallpaper = Kinds.PluginKind(SelectedKind) != null;
-            try { Clipboard.SetText(wallpaper ? AddCommand(res.Id) : res.Id.ToString()); } catch { }
-            result.Show(existing == 0 ? "Uploaded to the Workshop" : "Workshop item updated", res.Id, wallpaper);
-            SetStatus(wallpaper ? "Done. The add command is on your clipboard. Steam may take a few minutes to serve it."
-                                : "Done. The ID is on your clipboard. Steam may take a few minutes to serve it.", good: true);
-            Log($"Uploaded {res.Id}.");
-            if (res.NeedsAgreement) SetStatus("Uploaded, but accept the Workshop agreement on the item page before it works.", true);
-            if (wallpaper && addAfterUpload.Checked) await AddToServer(res.Id);
-        }
-        catch (Exception e) { progress.Value = 0; SetStatus("Upload failed: " + e.Message, true); Log(e.ToString(), true); }
-        finally { SetBusy(false); SaveSettings(); PerformLayout(); }
-    }
-
-    // Keep the uploaded files in Documents\Wallpaper Studio Uploader\<id>\ so the item can be re-uploaded later.
-    void KeepCopy(ulong id, string folder)
-    {
-        try
-        {
-            string dest = Path.Combine(Settings.ItemsDir, id.ToString());
-            string destContent = Path.Combine(dest, "content");
-            Directory.CreateDirectory(destContent);
-            foreach (var f in Directory.GetFiles(folder)) File.Copy(f, Path.Combine(destContent, Path.GetFileName(f)), true);
-            File.WriteAllText(Path.Combine(dest, "item.json"), JsonSerializer.Serialize(new
-            {
-                Id = id, Title = title.Text, Description = description.Text, Type = Kinds.ItemType(SelectedKind),
-                Source = sourceUrl ?? sourcePath, Uploaded = DateTime.Now,
-            }, new JsonSerializerOptions { WriteIndented = true }));
-            Log("Saved a copy in " + dest);
-        }
-        catch (Exception e) { Log("Couldn't save a local copy: " + e.Message, true); }
-    }
-
-    async Task LoadExisting()
-    {
-        ulong id = ParseId(existingId.Text);
-        if (id == 0) { SetStatus("Enter a Workshop ID or link to load.", true); return; }
-        SetBusy(true);
-        try
-        {
-            SetStatus($"Loading {id}…");
-            var (item, err) = await SteamWorkshop.GetOwnItem(id);
-            if (err != null) { SetStatus(err, true); return; }
-            var it = item!.Value;
-            title.Text = it.Title ?? ""; description.Text = it.Description ?? "";
-            foreach (ItemKind k in Enum.GetValues<ItemKind>())
-                if (it.HasTag(Kinds.ItemType(k))) typePicker.SelectedIndex = (int)k;
-            visibility.SelectedIndex = it.IsPublic ? 0 : it.IsFriendsOnly ? 2 : it.IsPrivate ? 3 : 1;
-            lastId = id;
-            SetStatus($"Loaded “{it.Title}”. Choose a new image to replace the picture, or just change the details and upload.", good: true);
-        }
-        catch (Exception e) { SetStatus("Couldn't load it: " + e.Message, true); }
+        catch (Exception e) { SetStatus(e.Message, TextRole.Error); }
         finally { SetBusy(false); }
     }
 
-    // ================= server =================
+    static string Tidy(string s) => System.Text.RegularExpressions.Regex.Replace(s.Replace('_', ' ').Replace('-', ' '), @"\s+", " ").Trim();
 
-    string AddCommand(ulong id)
+    string? ActiveSourceFile()
     {
-        string? pk = Kinds.PluginKind(SelectedKind);
-        return pk == null ? id.ToString() : $"wpstudio.add {id} {pk}" + (string.IsNullOrWhiteSpace(collection.Text) ? "" : " " + collection.Text.Trim());
+        if (sourcePath == null) return null;
+        string up = Path.Combine(Path.GetDirectoryName(sourcePath)!, "source-upscaled.png");
+        return state.Upscaled && File.Exists(up) ? up : sourcePath;
     }
 
-    async Task AddToServer(ulong id)
+    void ReloadSource()
     {
-        if (Kinds.PluginKind(SelectedKind) == null) { SetStatus("Sprays aren't managed by Wallpaper Studio, so there's nothing to add.", true); return; }
-        if (string.IsNullOrEmpty(rconPassword.Text)) { SetStatus("Fill in the server's RCON password first.", true); serverExp.Open = true; left.PerformLayout(); return; }
-        if (!int.TryParse(string.IsNullOrWhiteSpace(rconPort.Text) ? "28016" : rconPort.Text, out int port)) { SetStatus("The RCON port should be a number.", true); return; }
-        string host = string.IsNullOrWhiteSpace(rconHost.Text) ? "127.0.0.1" : rconHost.Text.Trim();
-        string cmd = AddCommand(id);
+        var f = ActiveSourceFile();
+        if (f == null) { SetSourcePreview(null); return; }
+        try { using var full = ImageOps.Load(f); SetSourcePreview(ImageOps.Shrink(full, 1400)); }
+        catch (Exception e) { SetStatus("Couldn't read the image: " + e.Message, TextRole.Error); }
+    }
+
+    void SetSourcePreview(Bitmap? b)
+    {
+        var old = sourcePreview; sourcePreview = b;
+        stage.Source = b; stage.State = state;
+        old?.Dispose();
+        if (b == null) { var r = stage.Result; stage.Result = null; r?.Dispose(); stage.Invalidate(); }
+        else Render();
+        UpdateButtons();
+    }
+
+    void RequestRender() { if (!loading && sourcePreview != null) { renderTimer.Stop(); renderTimer.Start(); } }
+
+    async void Render()
+    {
+        if (sourcePreview == null) return;
+        int gen = ++renderGen;
+        var src = new Bitmap(sourcePreview);
+        var st = state.Clone();
+        Bitmap img;
+        try { img = await Task.Run(() => { using (src) return ImageOps.Render(src, st, 640); }); }
+        catch (Exception e) { SetStatus("Preview failed: " + e.Message, TextRole.Error); return; }
+        if (gen != renderGen) { img.Dispose(); return; }
+        var old = stage.Result; stage.Result = img; old?.Dispose();
+        stage.Invalidate();
+    }
+
+    async Task Upscale()
+    {
+        var src = sourcePath;
+        if (src == null) { SetStatus("Choose an image first.", TextRole.Error); return; }
+        using (var probe = Image.FromFile(src))
+            if (Math.Max(probe.Width, probe.Height) > 3000)
+            { SetStatus("This image is already big (over 3000 px), so upscaling won't add detail.", TextRole.Error); return; }
+        SetBusy(true, "Upscaling…");
         try
         {
-            SetStatus($"Sending to {host}:{port}…");
-            Log("Server: " + cmd);
-            var reply = await Rcon.Send(host, port, rconPassword.Text, cmd);
-            reply = string.IsNullOrWhiteSpace(reply) ? "(no reply)" : reply.Trim();
-            Log("Server replied: " + reply);
-            SetStatus("Server: " + reply, good: reply.StartsWith("Added"), error: !reply.StartsWith("Added") && !reply.StartsWith("Already"));
-            SaveSettings();
+            if (!Upscaler.Installed)
+            {
+                if (!ConfirmDialog.Ask(this, "Download the AI upscaler?", new[] { ("Download", Upscaler.DownloadSize), ("From", "Real-ESRGAN on GitHub (free, open source)") },
+                    "Download", out _, "It's downloaded once and reused. It needs a graphics card with Vulkan support, which nearly all recent ones have.")) return;
+                SetStatus("Downloading the upscaler…");
+                await Upscaler.InstallAsync(new Progress<float>(p => progress.Value = p), CancellationToken.None);
+            }
+            SetStatus("Upscaling 4× (this can take a minute for big images)…");
+            string outFile = Path.Combine(Path.GetDirectoryName(src)!, "source-upscaled.png");
+            await Upscaler.RunAsync(src, outFile, new Progress<float>(p => progress.Value = p), CancellationToken.None);
+            state.Upscaled = true;
+            ReloadSource();
+            UpdateUpscaleText(); LayoutTools(); UpdateDirty();
+            SetStatus("Upscaled. The sharper version is used from now on.", TextRole.Ok);
         }
-        catch (Exception e) { SetStatus(e.Message, true); Log(e.Message, true); }
+        catch (Exception e) { SetStatus(e.Message, TextRole.Error); }
+        finally { progress.Value = 0; SetBusy(false); }
     }
 
-    // ================= helpers =================
+    // =============== save / delete ===============
 
-    static ulong ParseId(string s)
+    async Task Save()
     {
-        s = s.Trim();
-        if (ulong.TryParse(s, out var id)) return id;
-        var m = Regex.Match(s, @"[?&]id=(\d+)");
-        return m.Success && ulong.TryParse(m.Groups[1].Value, out id) ? id : 0;
+        if (busy) return;
+        if (!SteamWorkshop.Ready) { SetStatus("Not connected to Steam. Start Steam, then press Refresh.", TextRole.Error); return; }
+        if (sourcePath == null) { SetStatus("Choose an image first.", TextRole.Error); return; }
+        if (string.IsNullOrWhiteSpace(state.Title)) { SetStatus("Give it a title first.", TextRole.Error); title.Box.Focus(); return; }
+
+        bool isNew = current == null;
+        var before = Library.LoadEdit(state.Id);
+        bool imageChanged = isNew || before == null || before.ImageKey() != state.ImageKey() || before.Kind != state.Kind || before.Size != state.Size
+                            || before.Tile != state.Tile || before.Gloss != state.Gloss || before.Bump != state.Bump;
+        bool canAdd = !IsSpray && settings.HasServer;
+        string[] visNames = { "Public", "Unlisted", "Friends only", "Hidden" };
+        if (!ConfirmDialog.Ask(this, isNew ? "Upload a new Workshop item?" : "Save changes to the Workshop?",
+            new[] { ("Title", state.Title), ("Type", Kinds.ItemType(state.Kind)), ("Visibility", visNames[(int)state.Visibility]),
+                    ("Changes", isNew ? "New item" : imageChanged ? "Picture and details" : "Details only"), ("Steam account", SteamWorkshop.Name) },
+            isNew ? "Upload" : "Save", out bool addToServer, check: canAdd ? "Add it to my server" : null, checkOn: canAdd && serverCheck.Checked))
+            return;
+
+        SetBusy(true, "Saving…");
+        try
+        {
+            string folder = Library.Folder(state.Id), contentDir = Path.Combine(folder, "content");
+            Bitmap? icon = null;
+            if (imageChanged)
+            {
+                SetStatus("Making textures…"); progress.Value = 0.05f;
+                var st = state.Clone(); var srcFile = ActiveSourceFile()!;
+                var opts = new BuildOptions { Kind = st.Kind, Size = st.Size, Tile = st.Tile, Gloss = st.Gloss / 100f, Bump = st.Bump / 100f, AuthorId = SteamWorkshop.SteamId };
+                icon = await Task.Run(() =>
+                {
+                    using var full = ImageOps.Load(srcFile);
+                    using var final = ImageOps.Render(full, st, st.Size);
+                    ItemBuilder.Build(final, contentDir, opts);
+                    return ImageOps.Shrink(final, 96);
+                });
+            }
+            progress.Value = 0.15f;
+            SetStatus(isNew ? "Creating the Workshop item and uploading…" : "Uploading…");
+            var res = await SteamWorkshop.Upload(new UploadRequest
+            {
+                ExistingId = state.Id, Title = state.Title.Trim(), Description = state.Description.Trim(), Kind = state.Kind,
+                Visibility = state.Visibility, ContentFolder = imageChanged ? contentDir : null,
+            }, new Progress<float>(p => progress.Value = 0.15f + 0.85f * p));
+            if (!res.Ok) { SetStatus(res.Message, TextRole.Error); return; }
+
+            if (isNew) { Library.Promote(res.Id); state.Id = res.Id; }
+            Library.SaveEdit(state);
+            savedSnapshot = state.Json();
+            settings.Visibility = state.Visibility; settings.Size = state.Size;
+
+            var item = items.FirstOrDefault(i => i.Id == state.Id);
+            if (item == null) { item = new LibItem { Id = state.Id }; items.Insert(0, item); }
+            item.Title = state.Title; item.Description = state.Description; item.Kind = state.Kind; item.Visibility = state.Visibility; item.Updated = DateTime.UtcNow;
+            if (icon != null) { item.Thumb?.Dispose(); item.Thumb = icon; }
+            current = item;
+            RebuildList(); MarkSelected();
+            titleText.Text = state.Title; idChip.Text = state.Id.ToString();
+            UpdateButtons();
+
+            string msg = isNew ? $"Uploaded as {state.Id}." : "Saved.";
+            if (res.NeedsAgreement) msg += " Steam needs you to accept the Workshop agreement once: open the Workshop page.";
+            try { Clipboard.SetText(IsSpray ? state.Id.ToString() : AddCommand()); msg += IsSpray ? " ID copied." : " Add command copied."; } catch { }
+            SetStatus(msg + " Steam can take a few minutes to serve changes.", TextRole.Ok);
+            if (addToServer) await ServerCommand(AddCommand(), "added to your server");
+        }
+        catch (Exception e) { SetStatus("Save failed: " + e.Message, TextRole.Error); }
+        finally { progress.Value = 0; SetBusy(false); UpdateDirty(); PerformLayout(); }
     }
 
-    void Copy(string text, string msg) { try { Clipboard.SetText(text); SetStatus(msg, good: true); } catch { } }
+    async Task DeleteCurrent()
+    {
+        if (current == null || busy) return;
+        bool canRemove = !IsSpray && settings.HasServer;
+        if (!ConfirmDialog.Ask(this, "Delete this Workshop item?", new[] { ("Title", state.Title), ("ID", state.Id.ToString()) }, "Delete", out bool fromServer,
+            "This permanently deletes it from the Steam Workshop. Anyone using it will see it go plain.", ButtonKind.Danger,
+            canRemove ? "Also remove it from my server" : null, canRemove)) return;
+        SetBusy(true, "Deleting…");
+        try
+        {
+            ulong id = state.Id;
+            if (!await Library.DeleteAsync(id)) { SetStatus("Steam didn't delete it. Try again in a minute.", TextRole.Error); return; }
+            if (fromServer) await ServerCommand($"wpstudio.remove {id}", "removed from your server");
+            items.RemoveAll(i => i.Id == id);
+            savedSnapshot = state.Json();
+            NewItem(force: true);
+            RebuildList();
+            SetStatus($"Deleted {id} from the Workshop." + (fromServer ? " Also removed from your server." : ""), TextRole.Ok);
+        }
+        catch (Exception e) { SetStatus("Delete failed: " + e.Message, TextRole.Error); }
+        finally { SetBusy(false); }
+    }
 
-    void SetBusy(bool b)
+    string AddCommand()
+    {
+        string? pk = Kinds.PluginKind(state.Kind);
+        return pk == null ? state.Id.ToString() : $"wpstudio.add {state.Id} {pk}" + (string.IsNullOrWhiteSpace(settings.Collection) ? "" : " " + settings.Collection.Trim());
+    }
+
+    async Task ServerCommand(string cmd, string what)
+    {
+        try
+        {
+            var reply = (await Rcon.Send(settings.RconHost, settings.RconPort, settings.RconPassword, cmd)).Trim();
+            bool ok = reply.StartsWith("Added") || reply.StartsWith("Removed") || reply.StartsWith("Already");
+            SetStatus(status.Text + (ok ? $" Also {what}." : $" Server said: {reply}"), ok ? TextRole.Ok : TextRole.Error);
+        }
+        catch (Exception e) { SetStatus(status.Text + " Server: " + e.Message, TextRole.Error); }
+    }
+
+    // =============== small updates ===============
+
+    void UpdateKind()
+    {
+        bool spray = IsSpray;
+        kind.SetQuiet((int)state.Kind);
+        copyCmd.Text = spray ? "Copy add command" : "Copy add command";
+        UpdateServerCheck(); UpdateStageMode(); LayoutTools(); UpdateButtons(); PerformLayout();
+    }
+
+    void UpdateVisHint()
+    {
+        visHint.Text = state.Visibility switch
+        {
+            Visibility.Public => "Anyone can find it on the Workshop.",
+            Visibility.Unlisted => "Only people with the link can see it on Steam.",
+            Visibility.FriendsOnly => "Only your Steam friends can see it on Steam.",
+            _ => "Nobody can browse it, but it still works in game by its ID. Good for server-only wallpapers.",
+        };
+    }
+
+    void UpdateServerCheck()
+    {
+        bool can = !IsSpray && settings.HasServer;
+        serverCheck.Visible = can;
+        serverCheck.SetQuiet(can && settings.AddToServerAfterUpload);
+    }
+
+    void UpdateUpscaleText()
+    {
+        string extra = Upscaler.Installed ? "" : $" The first time, it downloads the free Real-ESRGAN upscaler ({Upscaler.DownloadSize}).";
+        upscaleText.Text = state.Upscaled
+            ? "Using the AI-upscaled version of your image (4× the original size)."
+            : "Small or blurry image? AI upscaling makes it 4× bigger and sharper before it's turned into a texture. Best for images under about 1000 px." + extra;
+        upscaleButton.Text = state.Upscaled ? "Upscale again" : "Upscale 4× with AI";
+        upscaleButton.FitWidth();
+    }
+
+    void UpdateStageMode()
+    {
+        stage.Mode = tabs.SelectedIndex switch { 0 => StageMode.Crop, 4 => StageMode.Tiled, _ => StageMode.Result };
+        stage.ShowRepeat = tabs.SelectedIndex == 2;
+        stage.Invalidate();
+    }
+
+    void UpdateButtons()
+    {
+        bool existing = current != null;
+        copyId.Visible = openPage.Visible = deleteButton.Visible = existing;
+        copyCmd.Visible = existing && !IsSpray;
+        saveButton.Text = existing ? "Save to Workshop" : "Upload to Workshop";
+        saveButton.Enabled = !busy && SteamWorkshop.Ready && sourcePath != null;
+        newButton.Enabled = !busy;
+        PerformLayout();
+    }
+
+    void UpdateDirty()
+    {
+        if (loading) return;
+        titleText.Text = current == null ? "New item" : (state.Title.Length > 0 ? state.Title : "Untitled");
+        if (Dirty && !busy && status.Role != TextRole.Error) SetStatus(current == null ? "Not uploaded yet." : "Unsaved changes.");
+        PerformLayout();
+    }
+
+    void SetBusy(bool b, string what = "")
     {
         busy = b;
-        UseWaitCursor = b;
-        uploadButton.Enabled = !b && SteamWorkshop.Ready;
-        loadExisting.Enabled = !b && SteamWorkshop.Ready;
-        if (b) { progress.Value = 0; result.Visible = false; PerformLayout(); }
+        stage.Busy = b ? what : "";
+        stage.Invalidate();
+        UseWaitCursor = b && what != "Upscaling…";
+        UpdateButtons();
     }
 
-    void SetStatus(string msg, bool error = false, bool good = false)
+    void SetStatus(string msg, TextRole role = TextRole.Text2)
     {
-        if (InvokeRequired) { BeginInvoke(() => SetStatus(msg, error, good)); return; }
-        status.Text = msg;
-        status.ForeColor = error ? Theme.Danger : good ? Theme.Accent : Theme.Muted;
+        if (InvokeRequired) { BeginInvoke(() => SetStatus(msg, role)); return; }
+        status.Text = msg; status.Role = role; status.Invalidate();
+        LayoutContent();
     }
 
-    void Log(string msg, bool error = false)
-    {
-        if (InvokeRequired) { BeginInvoke(() => Log(msg, error)); return; }
-        log.SelectionStart = log.TextLength;
-        log.SelectionColor = Theme.Faint; log.AppendText($"{DateTime.Now:HH:mm:ss}  ");
-        log.SelectionColor = error ? Theme.Danger : Theme.Muted; log.AppendText(msg + Environment.NewLine);
-        log.ScrollToCaret();
-    }
-
-    void SaveSettings()
-    {
-        settings.RconHost = rconHost.Text.Trim();
-        if (int.TryParse(rconPort.Text, out int p)) settings.RconPort = p;
-        settings.RconPassword = rconPassword.Text;
-        settings.Collection = collection.Text.Trim();
-        settings.AddToServerAfterUpload = addAfterUpload.Checked;
-        settings.Visibility = (Visibility)visibility.SelectedIndex;
-        settings.Size = size.SelectedIndex == 1 ? 1024 : 2048;
-        try { settings.Save(); } catch { }
-    }
+    void Copy(string text, string msg) { try { Clipboard.SetText(text); SetStatus(msg, TextRole.Ok); } catch { } }
 }
 
-/// App name and tagline across the top.
-sealed class HeaderBar : Panel
+static class RectExt
 {
-    public HeaderBar() { DoubleBuffered = true; BackColor = Theme.Bg; SetStyle(ControlStyles.ResizeRedraw, true); }
-
-    protected override void OnPaint(PaintEventArgs e)
+    public static System.Drawing.Drawing2D.GraphicsPath ToPath(this RectangleF r)
     {
-        var g = e.Graphics; Theme.Hq(g);
-        var tileR = new RectangleF(20, 15, 38, 38);
-        Theme.FillRound(g, Theme.Accent, tileR, 9);
-        Glyphs.Bricks(g, new RectangleF(29, 25, 20, 18), Theme.AccentText, 1.8f);
-        TextRenderer.DrawText(g, "Wallpaper Studio Uploader", Theme.Header, new Point(70, 9), Theme.Text);
-        TextRenderer.DrawText(g, "Turn any image into a Rust wallpaper or spray, ready on the Steam Workshop", Theme.Small, new Point(72, 43), Theme.Muted);
-        using var pen = new Pen(Theme.Border);
-        g.DrawLine(pen, 0, Height - 1, Width, Height - 1);
-    }
-}
-
-/// Rounded frame for the log box.
-sealed class LogFrame : Panel
-{
-    public LogFrame() { DoubleBuffered = true; BackColor = Theme.Bg; Padding = new Padding(12, 10, 6, 10); }
-    protected override void OnLayout(LayoutEventArgs e) { if (Controls.Count > 0) Controls[0].SetBounds(Padding.Left, Padding.Top, Width - Padding.Horizontal, Height - Padding.Vertical); base.OnLayout(e); }
-    protected override void OnPaintBackground(PaintEventArgs e)
-    {
-        var g = e.Graphics; g.Clear(Theme.Bg); Theme.Hq(g);
-        var r = new RectangleF(0.5f, 0.5f, Width - 1, Height - 1);
-        Theme.FillRound(g, Theme.Input, r, 10); Theme.StrokeRound(g, Theme.Border, r, 10);
-    }
-}
-
-/// A control that fills the row, with a fixed control on the right.
-sealed class InlineRow : Panel
-{
-    readonly Control right;
-    Control? fill;
-    public int RightWidth { get; set; }
-
-    public InlineRow(Control right) { this.right = right; BackColor = Theme.Panel; Controls.Add(right); }
-
-    public Control? Fill
-    {
-        get => fill;
-        set { if (fill != null) Controls.Remove(fill); fill = value; if (value != null) Controls.Add(value); PerformLayout(); }
-    }
-
-    protected override void OnLayout(LayoutEventArgs e)
-    {
-        int rw = RightWidth > 0 ? RightWidth : right.Width;
-        right.SetBounds(Width - rw, (Height - right.Height) / 2, rw, right.Height);
-        if (right is Field f) right.Height = Height;
-        fill?.SetBounds(0, 0, Width - rw - 8, Height);
-        base.OnLayout(e);
-    }
-}
-
-/// A dark confirmation dialog listing what's about to happen.
-sealed class ConfirmDialog : Form
-{
-    ConfirmDialog(string heading, (string k, string v)[] rows, string okText)
-    {
-        Text = "Confirm"; FormBorderStyle = FormBorderStyle.FixedDialog; MaximizeBox = MinimizeBox = false; ShowInTaskbar = false;
-        StartPosition = FormStartPosition.CenterParent; BackColor = Theme.Panel; ForeColor = Theme.Text; Font = Theme.Base;
-        ClientSize = new Size(460, 130 + rows.Length * 28);
-        var h = new Label { Text = heading, Font = Theme.CardTitle, ForeColor = Theme.Text, AutoSize = false, Bounds = new Rectangle(24, 20, 412, 26) };
-        Controls.Add(h);
-        int y = 58;
-        foreach (var (k, v) in rows)
-        {
-            Controls.Add(new Label { Text = k, ForeColor = Theme.Muted, AutoSize = false, Bounds = new Rectangle(24, y, 120, 24) });
-            Controls.Add(new Label { Text = v, ForeColor = Theme.Text, Font = Theme.Semi, AutoSize = false, AutoEllipsis = true, Bounds = new Rectangle(150, y, 286, 24) });
-            y += 28;
-        }
-        var ok = new FlatButton(okText, ButtonKind.Primary) { Height = 36 }; ok.FitWidth();
-        var cancel = new FlatButton("Cancel") { Height = 36 }; cancel.FitWidth();
-        ok.Location = new Point(ClientSize.Width - 24 - ok.Width, ClientSize.Height - 20 - ok.Height);
-        cancel.Location = new Point(ok.Left - 8 - cancel.Width, ok.Top);
-        ok.Click += (_, _) => { DialogResult = DialogResult.OK; Close(); };
-        cancel.Click += (_, _) => { DialogResult = DialogResult.Cancel; Close(); };
-        Controls.Add(ok); Controls.Add(cancel);
-        KeyPreview = true;
-        KeyDown += (_, e) => { if (e.KeyCode == Keys.Escape) { DialogResult = DialogResult.Cancel; Close(); } else if (e.KeyCode == Keys.Enter) { DialogResult = DialogResult.OK; Close(); } };
-        HandleCreated += (_, _) => Theme.DarkTitleBar(this);
-    }
-
-    public static bool Ask(IWin32Window owner, string heading, (string, string)[] rows, string okText)
-    {
-        using var d = new ConfirmDialog(heading, rows, okText);
-        return d.ShowDialog(owner) == DialogResult.OK;
+        var p = new System.Drawing.Drawing2D.GraphicsPath();
+        p.AddEllipse(r);
+        return p;
     }
 }

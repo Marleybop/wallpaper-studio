@@ -1,39 +1,100 @@
 using System.Drawing.Drawing2D;
+using System.Drawing.Text;
 using System.Runtime.InteropServices;
+using Microsoft.Win32;
 
 namespace WallpaperStudioUploader;
 
-/// Colours and fonts. Dark, with the same green as the Wallpaper Studio plugin.
+/// One set of colours. Values come from the Marleybop brand kit (tokens/marleybop.tokens.json).
+public sealed class Palette
+{
+    public bool Dark;
+    public Color Bg, Surface, Panel, Border, BorderStrong, Text, Text2, Muted, Link, Ok, Error, SelBg, SelText, Hover;
+    public static readonly Color Rust = Theme.Hex(0xC8452A), RustDark = Theme.Hex(0xA33620), RustLight = Theme.Hex(0xE2683F);
+    public static readonly Color Ink = Theme.Hex(0x16181B), Paper = Theme.Hex(0xF6F5F2), Graphite = Theme.Hex(0x3A3E44);
+
+    public static readonly Palette Light = new()
+    {
+        Dark = false, Bg = Theme.Hex(0xF6F5F2), Surface = Color.White, Panel = Theme.Hex(0xE6E4DF), Border = Theme.Hex(0xE0DDD7),
+        BorderStrong = Theme.Hex(0xD6D3CC), Text = Theme.Hex(0x16181B), Text2 = Theme.Hex(0x3A3E44), Muted = Theme.Hex(0x5A6068),
+        Link = Theme.Hex(0xA33620), Ok = Theme.Hex(0x3F7530), Error = Theme.Hex(0xB3261E), SelBg = Theme.Hex(0x16181B),
+        SelText = Theme.Hex(0xF6F5F2), Hover = Theme.Hex(0xEDEBE6),
+    };
+    public static readonly Palette DarkP = new()
+    {
+        Dark = true, Bg = Theme.Hex(0x111214), Surface = Theme.Hex(0x1C1E21), Panel = Theme.Hex(0x26292D), Border = Theme.Hex(0x2B2E33),
+        BorderStrong = Theme.Hex(0x3A3E44), Text = Theme.Hex(0xF6F5F2), Text2 = Theme.Hex(0xB9BDC2), Muted = Theme.Hex(0x8C9198),
+        Link = Theme.Hex(0xE2683F), Ok = Theme.Hex(0x6DB04A), Error = Theme.Hex(0xFF8A80), SelBg = Theme.Hex(0xF6F5F2),
+        SelText = Theme.Hex(0x16181B), Hover = Theme.Hex(0x23262A),
+    };
+}
+
+/// Brand colours, fonts and drawing helpers. Light and dark; follows Windows unless the user picks one.
 static class Theme
 {
-    public static readonly Color Bg = Hex(0x131416);
-    public static readonly Color Panel = Hex(0x1c1e21);
-    public static readonly Color Raised = Hex(0x26292d);
-    public static readonly Color Hover = Hex(0x2e3237);
-    public static readonly Color Input = Hex(0x101113);
-    public static readonly Color Border = Hex(0x2f3338);
-    public static readonly Color BorderHi = Hex(0x4a4f56);
-    public static readonly Color Text = Hex(0xebe9e6);
-    public static readonly Color Muted = Hex(0x9aa0a6);
-    public static readonly Color Faint = Hex(0x666b72);
-    public static readonly Color Accent = Hex(0x8cc63f);
-    public static readonly Color AccentHover = Hex(0xa2d95a);
-    public static readonly Color AccentDim = Hex(0x2a3a18);
-    public static readonly Color AccentText = Hex(0x11160a);
-    public static readonly Color Danger = Hex(0xe0614a);
-    public static readonly Color Warn = Hex(0xe0b04a);
+    public static Palette P { get; private set; } = Palette.DarkP;
+    public static event Action? Changed;
 
-    public static readonly Font Base = new("Segoe UI", 9.75f);
-    public static readonly Font Small = new("Segoe UI", 8.75f);
-    public static readonly Font Semi = new("Segoe UI Semibold", 9.75f);
-    public static readonly Font CardTitle = new("Segoe UI Semibold", 10.5f);
-    public static readonly Font Header = new("Segoe UI Semibold", 15f);
-    public static readonly Font Mono = new("Consolas", 9.5f);
-    public static readonly Font MonoBig = new("Consolas", 12f, FontStyle.Bold);
+    public static void Apply(string mode)   // "system" | "dark" | "light"
+    {
+        P = mode switch { "light" => Palette.Light, "dark" => Palette.DarkP, _ => SystemIsLight() ? Palette.Light : Palette.DarkP };
+        Changed?.Invoke();
+    }
+
+    /// Windows' app theme. Missing setting (or no Windows 10+) → dark, the brand default.
+    public static bool SystemIsLight()
+    {
+        try
+        {
+            using var k = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize");
+            return k?.GetValue("AppsUseLightTheme") is int v && v == 1;
+        }
+        catch { return false; }
+    }
 
     public static Color Hex(int rgb) => Color.FromArgb(255, (rgb >> 16) & 255, (rgb >> 8) & 255, rgb & 255);
     public static Color Mix(Color a, Color b, float t) =>
         Color.FromArgb((int)(a.R + (b.R - a.R) * t), (int)(a.G + (b.G - a.G) * t), (int)(a.B + (b.B - a.B) * t));
+    public static Color Alpha(Color c, int a) => Color.FromArgb(a, c);
+
+    // ---------- fonts (bundled: Space Grotesk, Inter, JetBrains Mono; all SIL OFL) ----------
+
+    static readonly PrivateFontCollection fonts = new();
+    [DllImport("gdi32.dll")] static extern IntPtr AddFontMemResourceEx(IntPtr pbFont, uint cbFont, IntPtr pdv, out uint pcFonts);
+
+    public static void LoadFonts()
+    {
+        var asm = typeof(Theme).Assembly;
+        foreach (var name in asm.GetManifestResourceNames().Where(n => n.EndsWith(".ttf", StringComparison.OrdinalIgnoreCase)))
+        {
+            using var s = asm.GetManifestResourceStream(name)!;
+            var data = new byte[s.Length];
+            s.ReadExactly(data);
+            IntPtr mem = Marshal.AllocCoTaskMem(data.Length);   // kept for the app's lifetime, as GDI needs it
+            Marshal.Copy(data, 0, mem, data.Length);
+            fonts.AddMemoryFont(mem, data.Length);
+            AddFontMemResourceEx(mem, (uint)data.Length, IntPtr.Zero, out _);   // so TextRenderer (GDI) can use it too
+        }
+    }
+
+    static FontFamily Family(string name) =>
+        fonts.Families.FirstOrDefault(f => f.Name == name) ?? new FontFamily(name.StartsWith("JetBrains") ? "Consolas" : "Segoe UI");
+
+    static readonly Dictionary<string, Font> cache = new();
+    static Font Get(string family, float size, FontStyle style = FontStyle.Regular)
+    {
+        string key = $"{family}|{size}|{style}";
+        if (!cache.TryGetValue(key, out var f)) cache[key] = f = new Font(Family(family), size, style, GraphicsUnit.Point);
+        return f;
+    }
+
+    public static Font Body(float size = 9.75f) => Get("Inter", size);
+    public static Font Medium(float size = 9.75f) => Get("Inter Medium", size);
+    public static Font Semi(float size = 9.75f) => Get("Inter SemiBold", size);
+    public static Font Display(float size = 13f) => Get("Space Grotesk", size, FontStyle.Bold);
+    public static Font Mono(float size = 9f) => Get("JetBrains Mono Medium", size);
+
+    // ---------- drawing ----------
 
     public static GraphicsPath Round(RectangleF r, float rad)
     {
@@ -48,127 +109,84 @@ static class Theme
         return p;
     }
 
-    public static void FillRound(Graphics g, Color c, RectangleF r, float rad)
-    {
-        using var p = Round(r, rad); using var b = new SolidBrush(c); g.FillPath(b, p);
-    }
-
-    public static void StrokeRound(Graphics g, Color c, RectangleF r, float rad, float w = 1f)
-    {
-        using var p = Round(r, rad); using var pen = new Pen(c, w); g.DrawPath(pen, p);
-    }
+    public static void FillRound(Graphics g, Color c, RectangleF r, float rad) { using var p = Round(r, rad); using var b = new SolidBrush(c); g.FillPath(b, p); }
+    public static void StrokeRound(Graphics g, Color c, RectangleF r, float rad, float w = 1f) { using var p = Round(r, rad); using var pen = new Pen(c, w); g.DrawPath(pen, p); }
 
     public static void Hq(Graphics g)
     {
         g.SmoothingMode = SmoothingMode.AntiAlias;
-        g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
+        g.TextRenderingHint = TextRenderingHint.ClearTypeGridFit;
         g.PixelOffsetMode = PixelOffsetMode.HighQuality;
+        g.InterpolationMode = InterpolationMode.HighQualityBicubic;
     }
 
-    // ---- Windows dark mode bits ----
+    public static void Text(Graphics g, string s, Font f, Rectangle r, Color c, TextFormatFlags flags = TextFormatFlags.Left | TextFormatFlags.VerticalCenter) =>
+        TextRenderer.DrawText(g, s, f, r, c, flags | TextFormatFlags.NoPadding | TextFormatFlags.EndEllipsis);
+
+    // ---------- the brand marks ----------
+
+    static readonly (string pts, int col)[] Peaks =
+    {
+        ("10,100 38,22 38,100", 0xB9BDC2), ("38,22 60,66 38,100", 0xC8452A), ("60,66 60,100 38,100", 0x8C9198),
+        ("60,66 82,22 82,100", 0xD7DADD), ("60,66 82,100 60,100", 0xA3A8AE), ("82,22 110,100 82,100", 0x8C9198),
+    };
+    static readonly (string pts, int col)[] Arrow =
+    {
+        ("60,22 90,56 60,56", 0xA3A8AE), ("60,22 60,56 30,56", 0xD7DADD), ("50,56 70,56 50,96", 0xB9BDC2),
+        ("70,56 70,96 50,96", 0x8C9198), ("60,22 70,34 60,34", 0xC8452A), ("60,22 60,34 50,34", 0xE2683F),
+    };
+
+    static void Polys(Graphics g, RectangleF r, (string pts, int col)[] polys, float scale = 1f, float ox = 0, float oy = 0)
+    {
+        float k = r.Width / 120f;
+        foreach (var (pts, col) in polys)
+        {
+            var p = pts.Split(' ').Select(s => s.Split(',')).Select(a =>
+                new PointF(r.X + (float.Parse(a[0]) * scale + ox) * k, r.Y + (float.Parse(a[1]) * scale + oy) * k)).ToArray();
+            using var b = new SolidBrush(Hex(col));
+            g.FillPolygon(b, p);
+        }
+    }
+
+    /// The Uploader's product icon: a faceted arrow on the Ink tile.
+    public static void UploaderIcon(Graphics g, RectangleF r, bool edge)
+    {
+        FillRound(g, Palette.Ink, r, r.Width * 0.233f);
+        if (edge) StrokeRound(g, Palette.Graphite, RectangleF.Inflate(r, -0.5f, -0.5f), r.Width * 0.233f, 1.2f);
+        Polys(g, r, Arrow);
+    }
+
+    /// The Marleybop mark: Twin Peaks on the Ink tile.
+    public static void Mark(Graphics g, RectangleF r)
+    {
+        FillRound(g, Palette.Ink, r, r.Width * 0.233f);
+        Polys(g, r, Peaks, 0.75f, 15, 14);
+    }
+
+    public static Icon AppIcon()
+    {
+        using var bmp = new Bitmap(64, 64);
+        using (var g = Graphics.FromImage(bmp)) { Hq(g); UploaderIcon(g, new RectangleF(0, 0, 64, 64), false); }
+        return Icon.FromHandle(bmp.GetHicon());
+    }
+
+    // ---------- Windows window chrome ----------
+
     [DllImport("dwmapi.dll")] static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int value, int size);
     [DllImport("uxtheme.dll", CharSet = CharSet.Unicode)] static extern int SetWindowTheme(IntPtr hwnd, string? app, string? idList);
 
-    public static void DarkTitleBar(Form f)
+    public static void TitleBar(Form f)
     {
-        int on = 1;
-        DwmSetWindowAttribute(f.Handle, 20, ref on, 4);                 // immersive dark mode
-        int caption = Bg.R | (Bg.G << 8) | (Bg.B << 16);
-        DwmSetWindowAttribute(f.Handle, 35, ref caption, 4);            // caption colour (Windows 11)
+        if (!f.IsHandleCreated) return;
+        int dark = P.Dark ? 1 : 0;
+        DwmSetWindowAttribute(f.Handle, 20, ref dark, 4);
+        int caption = P.Surface.R | (P.Surface.G << 8) | (P.Surface.B << 16);
+        DwmSetWindowAttribute(f.Handle, 35, ref caption, 4);
     }
 
-    public static void DarkScrollbars(Control c)
+    public static void Scrollbars(Control c)
     {
-        if (c.IsHandleCreated) SetWindowTheme(c.Handle, "DarkMode_Explorer", null);
-        else c.HandleCreated += (_, _) => SetWindowTheme(c.Handle, "DarkMode_Explorer", null);
-    }
-
-    /// The app icon, drawn rather than shipped: a green rounded tile with a brick pattern.
-    public static Icon MakeIcon()
-    {
-        using var bmp = new Bitmap(64, 64);
-        using (var g = Graphics.FromImage(bmp))
-        {
-            Hq(g);
-            FillRound(g, Accent, new RectangleF(2, 2, 60, 60), 14);
-            Glyphs.Bricks(g, new RectangleF(14, 16, 36, 32), AccentText, 2.6f);
-        }
-        return Icon.FromHandle(bmp.GetHicon());
-    }
-}
-
-/// Small vector icons drawn with GDI+.
-static class Glyphs
-{
-    public static void Bricks(Graphics g, RectangleF r, Color c, float w = 1.6f)
-    {
-        using var pen = new Pen(c, w) { LineJoin = LineJoin.Round };
-        g.DrawRectangle(pen, r.X, r.Y, r.Width, r.Height);
-        float row = r.Height / 3;
-        for (int i = 1; i < 3; i++) g.DrawLine(pen, r.X, r.Y + row * i, r.Right, r.Y + row * i);
-        for (int i = 0; i < 3; i++)
-        {
-            float off = i % 2 == 0 ? r.Width / 2 : r.Width / 4;
-            for (float x = r.X + off; x < r.Right - 1; x += r.Width / 2)
-                g.DrawLine(pen, x, r.Y + row * i, x, r.Y + row * (i + 1));
-        }
-    }
-
-    public static void Floor(Graphics g, RectangleF r, Color c, float w = 1.6f) => Plane(g, r, c, w, false);
-    public static void Ceiling(Graphics g, RectangleF r, Color c, float w = 1.6f) => Plane(g, r, c, w, true);
-
-    static void Plane(Graphics g, RectangleF r, Color c, float w, bool flip)
-    {
-        // a tiled plane in perspective
-        float inset = r.Width * 0.24f;
-        PointF Near(float t) => new(r.X + r.Width * t, flip ? r.Y : r.Bottom);
-        PointF Far(float t) => new(r.X + inset + (r.Width - 2 * inset) * t, flip ? r.Bottom : r.Y);
-        using var pen = new Pen(c, w) { LineJoin = LineJoin.Round };
-        g.DrawPolygon(pen, new[] { Near(0), Near(1), Far(1), Far(0) });
-        for (int i = 1; i < 3; i++) g.DrawLine(pen, Near(i / 3f), Far(i / 3f));
-        for (int i = 1; i < 3; i++)
-        {
-            float t = i / 3f; t = t * t * 0.4f + t * 0.6f;
-            float y = flip ? r.Bottom - (r.Height * (1 - t)) : r.Y + r.Height * t;
-            float half = (r.Width - 2 * inset * (1 - t)) / 2;
-            g.DrawLine(pen, r.X + r.Width / 2 - half, y, r.X + r.Width / 2 + half, y);
-        }
-    }
-
-    public static void Spray(Graphics g, RectangleF r, Color c, float w = 1.6f)
-    {
-        using var pen = new Pen(c, w) { LineJoin = LineJoin.Round, StartCap = LineCap.Round, EndCap = LineCap.Round };
-        var body = new RectangleF(r.X + r.Width * 0.18f, r.Y + r.Height * 0.38f, r.Width * 0.36f, r.Height * 0.62f);
-        using (var p = Theme.Round(body, 3)) g.DrawPath(pen, p);
-        g.DrawRectangle(pen, body.X + body.Width * 0.25f, body.Y - r.Height * 0.12f, body.Width * 0.5f, r.Height * 0.12f);
-        g.DrawRectangle(pen, body.X + body.Width * 0.35f, body.Y - r.Height * 0.24f, body.Width * 0.3f, r.Height * 0.12f);
-        // spray mist
-        using var dot = new SolidBrush(c);
-        float sx = body.Right + r.Width * 0.06f, sy = body.Y - r.Height * 0.18f;
-        var pts = new[] { (0.10f, -0.10f), (0.22f, -0.20f), (0.20f, 0.02f), (0.34f, -0.08f), (0.32f, 0.12f), (0.42f, -0.24f), (0.40f, 0.02f) };
-        foreach (var (dx, dy) in pts) g.FillEllipse(dot, sx + dx * r.Width - w, sy + dy * r.Height - w, w * 2, w * 2);
-    }
-
-    public static void Upload(Graphics g, RectangleF r, Color c, float w = 2f)
-    {
-        using var pen = new Pen(c, w) { StartCap = LineCap.Round, EndCap = LineCap.Round, LineJoin = LineJoin.Round };
-        float cx = r.X + r.Width / 2;
-        g.DrawLine(pen, cx, r.Y + r.Height * 0.12f, cx, r.Y + r.Height * 0.68f);
-        g.DrawLines(pen, new[] { new PointF(cx - r.Width * 0.24f, r.Y + r.Height * 0.34f), new PointF(cx, r.Y + r.Height * 0.10f), new PointF(cx + r.Width * 0.24f, r.Y + r.Height * 0.34f) });
-        g.DrawLines(pen, new[] { new PointF(r.X + r.Width * 0.08f, r.Y + r.Height * 0.66f), new PointF(r.X + r.Width * 0.08f, r.Bottom - r.Height * 0.06f), new PointF(r.Right - r.Width * 0.08f, r.Bottom - r.Height * 0.06f), new PointF(r.Right - r.Width * 0.08f, r.Y + r.Height * 0.66f) });
-    }
-
-    public static void Check(Graphics g, RectangleF r, Color c, float w = 2f)
-    {
-        using var pen = new Pen(c, w) { StartCap = LineCap.Round, EndCap = LineCap.Round, LineJoin = LineJoin.Round };
-        g.DrawLines(pen, new[] { new PointF(r.X + r.Width * 0.18f, r.Y + r.Height * 0.52f), new PointF(r.X + r.Width * 0.42f, r.Y + r.Height * 0.76f), new PointF(r.X + r.Width * 0.84f, r.Y + r.Height * 0.26f) });
-    }
-
-    public static void Chevron(Graphics g, RectangleF r, Color c, bool down, float w = 1.6f)
-    {
-        using var pen = new Pen(c, w) { StartCap = LineCap.Round, EndCap = LineCap.Round, LineJoin = LineJoin.Round };
-        float cx = r.X + r.Width / 2, cy = r.Y + r.Height / 2, s = Math.Min(r.Width, r.Height) * 0.28f;
-        if (down) g.DrawLines(pen, new[] { new PointF(cx - s, cy - s / 2), new PointF(cx, cy + s / 2), new PointF(cx + s, cy - s / 2) });
-        else g.DrawLines(pen, new[] { new PointF(cx - s / 2, cy - s), new PointF(cx + s / 2, cy), new PointF(cx - s / 2, cy + s) });
+        void Set() => SetWindowTheme(c.Handle, P.Dark ? "DarkMode_Explorer" : "Explorer", null);
+        if (c.IsHandleCreated) Set(); else c.HandleCreated += (_, _) => Set();
     }
 }

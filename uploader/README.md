@@ -1,43 +1,45 @@
 # Wallpaper Studio Uploader
 
-A Windows app that turns any image into a Rust **wallpaper** (wall, floor or ceiling) or **spray can
-decal** and uploads it to the Steam Workshop for you. You don't need to open Rust's Workshop editor.
+A Windows app for your Rust **wallpapers** (wall, floor, ceiling) and **spray can decals**: make new ones
+from any image, and edit, re-upload or delete the ones already on your Steam Workshop. No need to open
+Rust's Workshop editor. By Marleybop.
 
 ![Wallpaper Studio Uploader](../docs/uploader.png)
 
 ## What you need
 - Windows 10 or 11 (64-bit).
 - **Steam running** and logged in with the account that **owns Rust**. Items are uploaded to that account.
-- Nothing else. The download includes everything (no .NET install needed).
+- Nothing else to install. (The optional AI upscaler downloads itself the first time you use it.)
 
 ## Install
 1. Open the [Releases page](https://github.com/Marleybop/wallpaper-studio/releases) and download
    `WallpaperStudioUploader-<version>-win-x64.zip` from the newest **Uploader** release.
-2. Unzip it anywhere, for example `Documents\Wallpaper Studio Uploader app`. Keep
-   `WallpaperStudioUploader.exe` and `steam_api64.dll` in the same folder.
+2. Unzip it anywhere. Keep `WallpaperStudioUploader.exe` and `steam_api64.dll` together.
 3. Start Steam, then double-click `WallpaperStudioUploader.exe`.
-   - Windows may say *"Windows protected your PC"*, because the app isn't code-signed. Click
-     **More info → Run anyway**.
-4. The badge in the top-right corner should say **Steam · \<your name\>** with a green dot. If it's amber
-   and says *not connected*, start Steam, log in, then click the badge to retry.
+   - If Windows says *"Windows protected your PC"* (the app isn't code-signed): **More info → Run anyway**.
+4. Top right should show a green dot and **Steam · \<your name\>**. If not, start Steam and press **Refresh**
+   (bottom left).
 
-## Upload a new wallpaper or spray
-The left side has four numbered steps. The right side is a live preview.
+The app follows Windows' light/dark setting (dark if Windows has none). The moon/sun button at the top
+switches it; **Settings** has *Follow Windows / Dark / Light*.
 
-1. **Image**: any of these work:
-   - drag an image file onto the big preview box, or click **Browse…**;
-   - paste a link into **…or paste an image link** and click **Get** (or press Enter). It can be a
-     direct image link, or a web page with the image on it (Imgur, ArtStation, Reddit and so on);
-   - drag an image straight from your browser onto the preview;
-   - press **Ctrl+V** anywhere in the window to paste a copied link or a copied image
-     (right-click an image in your browser → **Copy image**).
+## The screen
+- **Left:** every wallpaper and spray your Steam account has on the Rust Workshop, newest first. Filter with
+  **All / Walls / Floors / Ceilings / Sprays**, or search by name or ID.
+- **Middle:** the image and its tools.
+- **Right:** type, title, description and visibility, and **Save to Workshop**.
 
-   PNG, JPG, BMP, GIF and TIFF work. For WebP images, save them as PNG or JPG first. The card warns
-   you if the image is small (under 512 px), because it will look blurry in game.
-2. **Type**: click **Wall**, **Floor**, **Ceiling** or **Spray**. A wall wallpaper only works on walls, so
-   pick the right one.
-3. **Details**: the **Title** is filled in from the file name, so change it if you like. **Description** is
-   optional. Then pick the **Visibility on Steam**:
+## Make a new one
+1. Press **+ New wallpaper or spray**.
+2. Add an image, any of these ways:
+   - drop an image file on the big box, or press **Choose image…**;
+   - paste a link in **…or paste an image link** and press **Get**: a direct image link or a web page with
+     the image on it (Imgur, ArtStation, Reddit…);
+   - drag an image straight from your browser onto the box;
+   - press **Ctrl+V** to paste a copied image or link.
+3. Pick the **Type**: **Wall**, **Floor**, **Ceiling** or **Spray**.
+4. Use the tools under the image (next section) if you like.
+5. Check the **Title**, add a **Description** if you want, choose **Visibility on Steam**:
 
    | Choice | Who can find it on Steam | Works in game? |
    |---|---|---|
@@ -46,75 +48,75 @@ The left side has four numbered steps. The right side is a live preview.
    | Friends | Your Steam friends | Yes |
    | Hidden | Only you (default) | Yes, by its ID |
 
-4. **Look** (wallpapers) or **Size** (sprays):
+6. Press **Upload to Workshop**, check the summary and press **Upload** (or Enter).
+7. It appears in the list on the left. Its add command (`wpstudio.add <id> wall`) is on your clipboard.
 
-   | Setting | What it does |
-   |---|---|
-   | Texture size | **2048 px** is best. **1024 px** is a smaller download but softer. |
-   | Repeat | Wallpapers only. Repeats the image 2×2 up to 8×8, for small patterns like tiles. |
-   | Shine | Wallpapers only. Left = matte, right = glossy. |
-   | Surface depth | Wallpapers only. How much bumpy surface is made from the image. Far left = flat. |
+New uploads can take a few minutes before Steam serves them in game. The first time you upload ever, Steam
+may ask you to accept the Workshop agreement; the app tells you, and **Open Workshop page** gets you there.
 
-   The preview shows the picture exactly as it will be cropped and repeated. Shine and surface depth
-   only show in game.
-5. Click **Upload to Workshop** (bottom right), check the summary and click **Upload**.
-6. When it finishes, a green box shows the new **Workshop ID** with buttons to **Copy ID**,
-   **Copy add command** (wallpapers) and **Open Workshop page**. The add command
-   (`wpstudio.add <id> wall`) is also already on your clipboard.
+## The image tools
 
-New uploads can take a few minutes before Steam serves them in game.
+| Tab | What it does |
+|---|---|
+| **Crop** | Drag the square on the image to choose which part is used; scroll (or the **Zoom** slider) to zoom. **Reset crop** goes back to the centre. Sprays keep the whole image unless you untick **Keep the whole image**. |
+| **Adjust** | **Brightness**, **Contrast**, **Saturation**, **Warmth**, **Sharpen**. Double-click a slider to reset it; **Reset** resets them all. |
+| **Look** | **Texture size** (2048 px best, 1024 px smaller download). Wallpapers also get **Repeat** (tile the image 2×2 to 8×8), **Shine** (matte to glossy) and **Surface depth**. |
+| **Upscale** | For small or blurry images: AI makes the image 4× bigger and sharper first. The first time, it downloads the free Real-ESRGAN upscaler (43 MB). Needs a graphics card with Vulkan (nearly all from the last ~8 years). **Use the original instead** undoes it. |
+| **Seamless** | **Blend edges** makes a pattern tile without visible seams. The image switches to a 3 × 3 tiling check so you can see the joins. |
 
-**First upload ever?** Steam may ask you to accept the Workshop legal agreement. The app tells you if
-it does. Open the Workshop page, accept it, and the item becomes usable.
+The big box shows the crop on the **Crop** tab, the finished result on the others, and the tiling check on
+**Seamless**.
 
-### How images are fitted
-- **Wallpapers** use the **centre square** of your image (the sides or top/bottom are cropped), so crop
-  it yourself first if a part matters.
-- **Sprays** keep the **whole image** and its **transparency**. The preview shows a checkerboard where
-  it's see-through. Use a PNG with a transparent background for a clean decal.
+## Edit one you already uploaded
+1. Click it in the list. Items made with this app open exactly as you left them (crop, adjustments,
+   everything). Others are downloaded from Steam and open as they are.
+2. Change anything: tools, type, title, description, visibility, or drop in a new image.
+3. Press **Save to Workshop**. If you only changed the text or visibility, only that is sent.
 
-## Add a wallpaper to your server
-The easy way: in game, open Wallpaper Studio → **Admin** tab, paste (Ctrl+V) the ID, pick the surface
-and press **ADD**. Or paste the copied `wpstudio.add …` command into the server console.
+Players who already have it see the change after Steam's next update check.
 
-Optionally the app can do it for you over RCON:
-1. Click **Send to a Wallpaper Studio server** (bottom left) to open it.
-2. Fill in **Address**, the **RCON port** (the server's `rcon.port`, often 28016) and the
-   **RCON password** (`rcon.password`). The server needs `rcon.web 1`, which is the default.
-3. Optional: a **Collection** name groups it in the in-game menu.
-4. Turn on **Add wallpapers to the server after upload**. From then on every wallpaper you upload is
-   added straight away. **Add the current ID now** adds the last upload (or the ID under *Update an item*).
+## Copy, open, delete
+At the top of an opened item:
+- **Copy ID**, and for wallpapers **Copy add command** (paste it in the server console, or the item's ID in
+  the in-game **Admin** tab).
+- **Open Workshop page**.
+- **Delete…** permanently deletes it from the Workshop. If your server is set up (below), tick **Also
+  remove it from my server** so no dead ID is left behind.
 
-The RCON password controls the whole server, so only use this on a PC you trust. It's saved encrypted
-for your Windows account. Sprays aren't managed by Wallpaper Studio, so they're never sent to the server.
+## Your Wallpaper Studio server (optional)
+**Settings → Wallpaper Studio server** lets the app add new wallpapers to your server when you save, and
+remove them when you delete. Fill in:
+1. **Address** and **RCON port** (the server's `rcon.port`, often 28016).
+2. **RCON password** (`rcon.password`). The server needs `rcon.web 1`, the default.
+3. Optional **Collection** to group new wallpapers in the in-game menu.
+4. **Add new wallpapers to the server when I save**, if you want that on by default.
 
-## Update an item you already uploaded
-1. Click **Update an item you already uploaded** (bottom left) to open it.
-2. Paste the Workshop ID or link and click **Load**. The title, description, type and visibility are
-   filled in. You can only update items your Steam account owns.
-3. To replace the picture, choose a new image. To change only the text or visibility, don't.
-4. Click **Upload to Workshop**, then **Update**.
+Then each item shows **Add it to my server when I save**. The RCON password controls the whole server, so
+only set this up on a PC you trust. It's stored encrypted for your Windows account. Sprays aren't sent to
+the server.
 
-To go back to making a new item, click **New item instead**. Players who already downloaded the item
-see the change after Steam's next update check.
+## Keyboard
+**Ctrl+N** new item · **Ctrl+S** save · **Ctrl+V** paste an image or link · **Enter** confirms a dialog ·
+**Esc** cancels it.
 
 ## Where things are kept
+
 | What | Where |
 |---|---|
-| Files of each upload (textures, icons, `manifest.txt`) | `Documents\Wallpaper Studio Uploader\<Workshop ID>\` |
-| Images downloaded from links or pasted | `%LOCALAPPDATA%\WallpaperStudioUploader\downloads\` (safe to empty) |
-| Settings (server address, last choices) | `%APPDATA%\WallpaperStudioUploader\settings.json` |
-| RCON password | In the settings file, encrypted for your Windows account (not plain text) |
+| Each item: its source image, your edits (`edit.json`) and the built textures (`content\`) | `Documents\Wallpaper Studio Uploader\<Workshop ID>\` |
+| Settings | `%APPDATA%\WallpaperStudioUploader\settings.json` |
+| Thumbnails, downloaded images, the AI upscaler | `%LOCALAPPDATA%\WallpaperStudioUploader\` (safe to delete) |
 
 ## Building from source (developers)
 1. Install the .NET 10 SDK.
 2. In this folder run `dotnet publish -c Release -o publish`. The `publish` folder is the release:
    `WallpaperStudioUploader.exe` (self-contained) and `steam_api64.dll`.
-3. Command-line use (output goes to the console you start it from):
-   - Build the textures without Steam:
-     `WallpaperStudioUploader.exe --build <image> <wall|floor|ceiling|spray> <out folder> [--size 1024] [--tile N] [--gloss 0.25] [--bump 1]`
-   - Upload (Steam must be running):
-     `WallpaperStudioUploader.exe --upload <image or link> <wall|floor|ceiling|spray> --title "Name" [--visibility hidden|unlisted|friends|public] [--id <existing ID>] [--size 1024] [--tile N]`
-     It prints the new ID and, for wallpapers, the `wpstudio.add` command.
+3. Command-line modes (output goes to the console you start it from):
+   - `--build <image> <wall|floor|ceiling|spray> <out folder> [--size 1024] [--tile N] [--gloss 0.25] [--bump 1]`
+   - `--upload <image or link> <wall|floor|ceiling|spray> --title "Name" [--visibility hidden|unlisted|friends|public] [--id <existing ID>]`
+   - `--list` lists your Rust Workshop wallpapers and sprays.
+   - `--upscale <image> <out.png>` runs the AI upscaler once.
 
-Uses [Facepunch.Steamworks](https://github.com/Facepunch/Facepunch.Steamworks) (MIT) to talk to Steam as Rust (app 252490).
+Credits: [Facepunch.Steamworks](https://github.com/Facepunch/Facepunch.Steamworks) (MIT) for Steam,
+[Real-ESRGAN](https://github.com/xinntao/Real-ESRGAN) (BSD-3-Clause) for upscaling, and the Space Grotesk,
+Inter and JetBrains Mono fonts (SIL Open Font Licence; licences in `Fonts\`).
